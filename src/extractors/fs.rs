@@ -2,7 +2,9 @@ use crate::models::FileMetadata;
 use chrono::{DateTime, Utc};
 use std::path::Path;
 
-pub fn extract_fs_metadata(path: &Path) -> std::io::Result<(i64, DateTime<Utc>, String, Option<String>)> {
+pub fn extract_fs_metadata(
+    path: &Path,
+) -> std::io::Result<(i64, DateTime<Utc>, String, Option<String>)> {
     let metadata = std::fs::metadata(path)?;
     let size_bytes = metadata.len() as i64;
     let modified_at = metadata
@@ -22,10 +24,13 @@ pub fn extract_fs_metadata(path: &Path) -> std::io::Result<(i64, DateTime<Utc>, 
 
 pub fn detect_file_type(extension: Option<&str>) -> String {
     match extension {
-        Some("mp4") | Some("mkv") | Some("avi") | Some("mov") | Some("webm") | Some("flv") | Some("wmv") => "video".to_string(),
-        Some("mp3") | Some("flac") | Some("wav") | Some("aac") | Some("ogg") | Some("m4a") | Some("opus") | Some("wma") => "audio".to_string(),
+        Some("mp4") | Some("mkv") | Some("avi") | Some("mov") | Some("webm") | Some("flv")
+        | Some("wmv") => "video".to_string(),
+        Some("mp3") | Some("flac") | Some("wav") | Some("aac") | Some("ogg") | Some("m4a")
+        | Some("opus") | Some("wma") => "audio".to_string(),
         Some("pdf") => "pdf".to_string(),
-        Some("zip") | Some("rar") | Some("7z") | Some("tar") | Some("gz") | Some("bz2") | Some("xz") => "archive".to_string(),
+        Some("zip") | Some("rar") | Some("7z") | Some("tar") | Some("gz") | Some("bz2")
+        | Some("xz") => "archive".to_string(),
         _ => "unknown".to_string(),
     }
 }
@@ -33,14 +38,24 @@ pub fn detect_file_type(extension: Option<&str>) -> String {
 pub fn is_video_file(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
-        .map(|e| matches!(e.to_lowercase().as_str(), "mp4" | "mkv" | "avi" | "mov" | "webm" | "flv" | "wmv"))
+        .map(|e| {
+            matches!(
+                e.to_lowercase().as_str(),
+                "mp4" | "mkv" | "avi" | "mov" | "webm" | "flv" | "wmv"
+            )
+        })
         .unwrap_or(false)
 }
 
 pub fn is_audio_file(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
-        .map(|e| matches!(e.to_lowercase().as_str(), "mp3" | "flac" | "wav" | "aac" | "ogg" | "m4a" | "opus" | "wma"))
+        .map(|e| {
+            matches!(
+                e.to_lowercase().as_str(),
+                "mp3" | "flac" | "wav" | "aac" | "ogg" | "m4a" | "opus" | "wma"
+            )
+        })
         .unwrap_or(false)
 }
 
@@ -54,7 +69,12 @@ pub fn is_pdf_file(path: &Path) -> bool {
 pub fn is_archive_file(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
-        .map(|e| matches!(e.to_lowercase().as_str(), "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz"))
+        .map(|e| {
+            matches!(
+                e.to_lowercase().as_str(),
+                "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz"
+            )
+        })
         .unwrap_or(false)
 }
 

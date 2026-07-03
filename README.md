@@ -9,6 +9,7 @@ Indexador local de activos digitales escrito en Rust. Escanea directorios, extra
 - **Metadatos de audio**: duración, codec y tags (título, artista, álbum, género, fecha) vía `ffprobe`.
 - **Documentos y archivos comprimidos**: extracción de páginas e información de PDFs (`lopdf`) y listado de contenido de archivos ZIP.
 - **Agrupación inteligente**: detecta automáticamente series, películas (incluyendo versiones/remakes) y colecciones por prefijo.
+- **Notas y etiquetas**: añade notas históricas y tags a cualquier archivo; gestión desde CLI y web.
 - **Base de datos SQLite embebida**: sin instalación externa.
 - **Interfaz web vanilla**: embebida en el binario, lista para usar.
 - **Single binary**: copia y ejecuta desde cualquier carpeta.
@@ -92,6 +93,19 @@ Si ya tienes archivos indexados y quieres aplicar nuevas reglas de agrupación:
 alexandria regroup
 ```
 
+### Añadir una nota a un archivo
+
+```bash
+alexandria note "C:/Users/Admin/Videos/movie.mp4" --content "Versión extendida"
+```
+
+### Gestionar etiquetas de un archivo
+
+```bash
+alexandria tag "C:/Users/Admin/Videos/movie.mp4" --add favoritos --add pendiente
+alexandria tag "C:/Users/Admin/Videos/movie.mp4" --remove pendiente
+```
+
 ## Agrupación inteligente
 
 Alexandria clasifica automáticamente los archivos en grupos:
@@ -107,10 +121,20 @@ Las películas con el mismo título y año pero diferentes versiones (Director's
 ## API REST
 
 - `GET /api/health` — estado del servidor.
-- `GET /api/stats` — estadísticas.
-- `GET /api/files` — listar archivos con filtros (`name`, `extension`, `file_type`, `min_size`, `max_size`, `has_subtitles`, `group_id`).
+- `GET /api/stats` — estadísticas (totales, por tipo de archivo, grupos, último escaneo).
+- `GET /api/stats/by-type` — conteo de archivos por tipo.
+- `GET /api/files` — listar archivos con filtros (`name`, `extension`, `file_type`, `min_size`, `max_size`, `has_subtitles`, `group_id`, `modified_after`, `modified_before`, `sort_by`, `sort_order`, `limit`, `offset`).
+- `GET /api/files/count` — conteo de archivos según los mismos filtros.
 - `GET /api/files/:id` — detalle de un archivo.
-- `POST /api/files/:id/notes` — añadir/editar nota.
+- `GET /api/files/:id/notes` — historial de notas del archivo.
+- `POST /api/files/:id/notes` — añadir/editar nota principal e insertar en el historial.
+- `DELETE /api/notes/:id` — eliminar una nota del historial.
+- `GET /api/files/:id/tags` — etiquetas del archivo.
+- `POST /api/files/:id/tags` — asignar etiqueta (la crea si no existe).
+- `DELETE /api/files/:id/tags/:tag_id` — desasignar etiqueta.
+- `GET /api/file-types` — tipos de archivo indexados.
+- `GET /api/extensions` — extensiones indexadas.
+- `GET /api/scan-jobs` — últimos trabajos de escaneo.
 - `GET /api/groups` — listar grupos (`?kind=series`).
 - `GET /api/groups/:id` — detalle de un grupo.
 - `GET /api/groups/:id/files` — archivos de un grupo.
@@ -154,8 +178,8 @@ cargo test
 Ver [AlexandriaProject.MD](AlexandriaProject.MD) para la hoja de ruta completa.
 
 Próximas fases:
-- Mejoras de UI/UX en el frontend (dashboard, grupos, filtros avanzados).
 - Soporte para más formatos de archivo (RAR, 7z, imágenes, etc.).
+- Pruebas de carga y estabilidad en discos grandes.
 
 ## Licencia
 

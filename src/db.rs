@@ -1,5 +1,5 @@
 use crate::error::{AlexandriaError, Result};
-use crate::models::{FileEntry, FileFilter, FileMetadata, Group, Stats};
+use crate::models::{FileEntry, FileFilter, FileMetadata, Group, Note, ScanJob, Stats, Tag};
 use chrono::{DateTime, Utc};
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Row, Sqlite};
 use std::path::Path;
@@ -113,7 +113,7 @@ impl Database {
         let mut sql = String::from(
             "SELECT id, path, name, extension, size_bytes, modified_at, scanned_at, file_type, \
              duration_seconds, width, height, video_codec, audio_codec, has_subtitles, \
-             audio_tracks, subtitle_tracks, extra_json, notes, group_id FROM files WHERE 1=1"
+             audio_tracks, subtitle_tracks, extra_json, notes, group_id FROM files WHERE 1=1",
         );
 
         if filter.name.is_some() {
@@ -137,7 +137,27 @@ impl Database {
         if filter.group_id.is_some() {
             sql.push_str(" AND group_id = ?");
         }
-        sql.push_str(" ORDER BY name LIMIT ? OFFSET ?");
+        if filter.modified_after.is_some() {
+            sql.push_str(" AND modified_at >= ?");
+        }
+        if filter.modified_before.is_some() {
+            sql.push_str(" AND modified_at <= ?");
+        }
+
+        let sort_by = match filter.sort_by.as_deref() {
+            Some("size") => "size_bytes",
+            Some("modified_at") => "modified_at",
+            Some("duration") => "duration_seconds",
+            _ => "name",
+        };
+        let sort_order = match filter.sort_order.as_deref() {
+            Some("desc") => "DESC",
+            _ => "ASC",
+        };
+        sql.push_str(&format!(
+            " ORDER BY {} {} LIMIT ? OFFSET ?",
+            sort_by, sort_order
+        ));
 
         let limit = filter.limit.unwrap_or(100);
         let offset = filter.offset.unwrap_or(0);
@@ -165,23 +185,107 @@ impl Database {
         if let Some(gid) = filter.group_id {
             query = query.bind(gid);
         }
+        if let Some(after) = filter.modified_after {
+            query = query.bind(after);
+        }
+        if let Some(before) = filter.modified_before {
+            query = query.bind(before);
+        }
         query = query.bind(limit).bind(offset);
 
         let rows = query.fetch_all(&self.pool).await?;
         Ok(rows)
     }
 
+    pub async fn count_files(&self, filter: &FileFilter) -> Result<i64> {
+        let mut sql = String::from("SELECT COUNT(*) FROM files WHERE 1=1");
+
+        if filter.name.is_some() {
+            sql.push_str(" AND name LIKE ?");
+        }
+        if filter.extension.is_some() {
+            sql.push_str(" AND extension = ?");
+        }
+        if filter.file_type.is_some() {
+            sql.push_str(" AND file_type = ?");
+        }
+        if filter.min_size.is_some() {
+            sql.push_str(" AND size_bytes >= ?");
+        }
+        if filter.max_size.is_some() {
+            sql.push_str(" AND size_bytes <= ?");
+        }
+        if filter.has_subtitles.is_some() {
+            sql.push_str(" AND has_subtitles = ?");
+        }
+        if filter.group_id.is_some() {
+            sql.push_str(" AND group_id = ?");
+        }
+        if filter.modified_after.is_some() {
+            sql.push_str(" AND modified_at >= ?");
+        }
+        if filter.modified_before.is_some() {
+            sql.push_str(" AND modified_at <= ?");
+        }
+
+        let mut query = sqlx::query_scalar::<_, i64>(&sql);
+
+        if let Some(name) = &filter.name {
+            query = query.bind(format!("%{}%", name));
+        }
+        if let Some(ext) = &filter.extension {
+            query = query.bind(ext.to_lowercase());
+        }
+        if let Some(ft) = &filter.file_type {
+            query = query.bind(ft.to_lowercase());
+        }
+        if let Some(min) = filter.min_size {
+            query = query.bind(min);
+        }
+        if let Some(max) = filter.max_size {
+            query = query.bind(max);
+        }
+        if let Some(subs) = filter.has_subtitles {
+            query = query.bind(if subs { 1 } else { 0 });
+        }
+        if let Some(gid) = filter.group_id {
+            query = query.bind(gid);
+        }
+        if let Some(after) = filter.modified_after {
+            query = query.bind(after);
+        }
+        if let Some(before) = filter.modified_before {
+            query = query.bind(before);
+        }
+
+        let count = query.fetch_one(&self.pool).await?;
+        Ok(count)
+    }
+
     pub async fn get_file(&self, id: i64) -> Result<FileEntry> {
         let row = sqlx::query_as::<_, FileEntry>(
             "SELECT id, path, name, extension, size_bytes, modified_at, scanned_at, file_type, \
              duration_seconds, width, height, video_codec, audio_codec, has_subtitles, \
-             audio_tracks, subtitle_tracks, extra_json, notes, group_id FROM files WHERE id = ?"
+             audio_tracks, subtitle_tracks, extra_json, notes, group_id FROM files WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
         .await?;
 
         row.ok_or_else(|| AlexandriaError::NotFound(format!("File with id {} not found", id)))
+    }
+
+    pub async fn find_file_by_path(&self, path: &str) -> Result<Option<FileEntry>> {
+        let row = sqlx::query_as::<_, FileEntry>(
+            "SELECT id, path, name, extension, size_bytes, modified_at, scanned_at, file_type, \
+             duration_seconds, width, height, video_codec, audio_codec, has_subtitles, \
+             audio_tracks, subtitle_tracks, extra_json, notes, group_id FROM files WHERE path = ?",
+        )
+        .bind(path)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row)
     }
 
     pub async fn update_notes(&self, id: i64, notes: &str) -> Result<()> {
@@ -192,17 +296,120 @@ impl Database {
             .await?;
 
         if rows.rows_affected() == 0 {
-            return Err(AlexandriaError::NotFound(format!("File with id {} not found", id)));
+            return Err(AlexandriaError::NotFound(format!(
+                "File with id {} not found",
+                id
+            )));
+        }
+
+        self.add_file_note(id, notes).await?;
+        Ok(())
+    }
+
+    pub async fn add_file_note(&self, file_id: i64, content: &str) -> Result<i64> {
+        let id: i64 =
+            sqlx::query_scalar("INSERT INTO notes (file_id, content) VALUES (?, ?) RETURNING id")
+                .bind(file_id)
+                .bind(content)
+                .fetch_one(&self.pool)
+                .await?;
+        Ok(id)
+    }
+
+    pub async fn list_file_notes(&self, file_id: i64) -> Result<Vec<Note>> {
+        let rows = sqlx::query_as::<_, Note>(
+            "SELECT id, file_id, content, created_at, updated_at FROM notes \
+             WHERE file_id = ? ORDER BY created_at DESC",
+        )
+        .bind(file_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    pub async fn delete_note(&self, note_id: i64) -> Result<()> {
+        let rows = sqlx::query("DELETE FROM notes WHERE id = ?")
+            .bind(note_id)
+            .execute(&self.pool)
+            .await?;
+
+        if rows.rows_affected() == 0 {
+            return Err(AlexandriaError::NotFound(format!(
+                "Note with id {} not found",
+                note_id
+            )));
         }
         Ok(())
+    }
+
+    pub async fn list_tags(&self) -> Result<Vec<Tag>> {
+        let rows = sqlx::query_as::<_, Tag>("SELECT id, name, created_at FROM tags ORDER BY name")
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows)
+    }
+
+    pub async fn add_tag(&self, name: &str) -> Result<i64> {
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO tags (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name = excluded.name RETURNING id"
+        )
+        .bind(name.to_lowercase())
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(id)
+    }
+
+    pub async fn assign_tag_to_file(&self, file_id: i64, tag_id: i64) -> Result<()> {
+        sqlx::query("INSERT OR IGNORE INTO file_tags (file_id, tag_id) VALUES (?, ?)")
+            .bind(file_id)
+            .bind(tag_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn remove_tag_from_file(&self, file_id: i64, tag_id: i64) -> Result<()> {
+        let rows = sqlx::query("DELETE FROM file_tags WHERE file_id = ? AND tag_id = ?")
+            .bind(file_id)
+            .bind(tag_id)
+            .execute(&self.pool)
+            .await?;
+
+        if rows.rows_affected() == 0 {
+            return Err(AlexandriaError::NotFound(format!(
+                "Tag {} is not assigned to file {}",
+                tag_id, file_id
+            )));
+        }
+        Ok(())
+    }
+
+    pub async fn get_file_tags(&self, file_id: i64) -> Result<Vec<Tag>> {
+        let rows = sqlx::query_as::<_, Tag>(
+            r#"
+            SELECT t.id, t.name, t.created_at
+            FROM tags t
+            JOIN file_tags ft ON ft.tag_id = t.id
+            WHERE ft.file_id = ?
+            ORDER BY t.name
+            "#,
+        )
+        .bind(file_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
     }
 
     pub async fn stats(&self) -> Result<Stats> {
         let row = sqlx::query(
             "SELECT COUNT(*) as total, COALESCE(SUM(size_bytes), 0) as total_size, \
              SUM(CASE WHEN file_type = 'video' THEN 1 ELSE 0 END) as video_count, \
+             SUM(CASE WHEN file_type = 'audio' THEN 1 ELSE 0 END) as audio_count, \
+             SUM(CASE WHEN file_type = 'pdf' THEN 1 ELSE 0 END) as pdf_count, \
+             SUM(CASE WHEN file_type = 'archive' THEN 1 ELSE 0 END) as archive_count, \
+             SUM(CASE WHEN file_type = 'unknown' THEN 1 ELSE 0 END) as unknown_count, \
              (SELECT COUNT(*) FROM groups) as group_count, \
-             MAX(scanned_at) as last_scan FROM files"
+             MAX(scanned_at) as last_scan FROM files",
         )
         .fetch_one(&self.pool)
         .await?;
@@ -210,6 +417,10 @@ impl Database {
         let total_files: i64 = row.try_get("total")?;
         let total_size_bytes: i64 = row.try_get("total_size")?;
         let video_files: i64 = row.try_get("video_count")?;
+        let audio_files: i64 = row.try_get("audio_count")?;
+        let pdf_files: i64 = row.try_get("pdf_count")?;
+        let archive_files: i64 = row.try_get("archive_count")?;
+        let unknown_files: i64 = row.try_get("unknown_count")?;
         let group_count: i64 = row.try_get("group_count")?;
         let last_scan: Option<DateTime<Utc>> = row.try_get("last_scan")?;
 
@@ -217,16 +428,40 @@ impl Database {
             total_files,
             total_size_bytes,
             video_files,
+            audio_files,
+            pdf_files,
+            archive_files,
+            unknown_files,
             group_count,
             last_scan,
         })
     }
 
-    pub async fn create_scan_job(&self, root_path: &str) -> Result<i64> {
-        let id: i64 = sqlx::query_scalar("INSERT INTO scan_jobs (root_path) VALUES (?) RETURNING id")
-            .bind(root_path)
-            .fetch_one(&self.pool)
+    pub async fn stats_by_type(&self) -> Result<std::collections::HashMap<String, i64>> {
+        let rows = sqlx::query("SELECT file_type, COUNT(*) as count FROM files GROUP BY file_type")
+            .fetch_all(&self.pool)
             .await?;
+
+        let mut map = std::collections::HashMap::new();
+        for t in ["video", "audio", "pdf", "archive", "unknown"] {
+            map.insert(t.to_string(), 0);
+        }
+
+        for row in rows {
+            let file_type: String = row.try_get("file_type")?;
+            let count: i64 = row.try_get("count")?;
+            map.insert(file_type, count);
+        }
+
+        Ok(map)
+    }
+
+    pub async fn create_scan_job(&self, root_path: &str) -> Result<i64> {
+        let id: i64 =
+            sqlx::query_scalar("INSERT INTO scan_jobs (root_path) VALUES (?) RETURNING id")
+                .bind(root_path)
+                .fetch_one(&self.pool)
+                .await?;
         Ok(id)
     }
 
@@ -240,7 +475,7 @@ impl Database {
     ) -> Result<()> {
         sqlx::query(
             "UPDATE scan_jobs SET finished_at = CURRENT_TIMESTAMP, files_found = ?, \
-             files_indexed = ?, errors = ?, status = ? WHERE id = ?"
+             files_indexed = ?, errors = ?, status = ? WHERE id = ?",
         )
         .bind(files_found)
         .bind(files_indexed)
@@ -250,6 +485,34 @@ impl Database {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    pub async fn list_scan_jobs(&self) -> Result<Vec<ScanJob>> {
+        let rows = sqlx::query_as::<_, ScanJob>(
+            "SELECT id, started_at, finished_at, root_path, files_found, files_indexed, errors, status \
+             FROM scan_jobs ORDER BY started_at DESC LIMIT 20"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    pub async fn list_file_types(&self) -> Result<Vec<String>> {
+        let rows = sqlx::query_scalar::<_, String>(
+            "SELECT DISTINCT file_type FROM files WHERE file_type IS NOT NULL ORDER BY file_type",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    pub async fn list_extensions(&self) -> Result<Vec<String>> {
+        let rows = sqlx::query_scalar::<_, String>(
+            "SELECT DISTINCT extension FROM files WHERE extension IS NOT NULL AND extension != '' ORDER BY extension"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
     }
 
     // Group operations
@@ -317,7 +580,7 @@ impl Database {
             LEFT JOIN files f ON f.group_id = g.id
             WHERE g.id = ?
             GROUP BY g.id
-            "#
+            "#,
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -327,7 +590,9 @@ impl Database {
     }
 
     pub async fn clear_file_groups(&self) -> Result<()> {
-        sqlx::query("UPDATE files SET group_id = NULL").execute(&self.pool).await?;
+        sqlx::query("UPDATE files SET group_id = NULL")
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 

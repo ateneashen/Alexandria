@@ -12,52 +12,172 @@
         <p>Indexador local de activos digitales</p>
     </header>
 
+    <nav class="tabs">
+        <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+        <button class="tab-btn" data-tab="files">Archivos</button>
+        <button class="tab-btn" data-tab="groups">Grupos</button>
+    </nav>
+
     <main>
-        <section id="stats">
-            <h2>Estadísticas</h2>
-            <div class="stats-grid">
-                <div class="stat"><span id="total-files">-</span><label>Archivos</label></div>
-                <div class="stat"><span id="video-files">-</span><label>Videos</label></div>
-                <div class="stat"><span id="total-size">-</span><label>Tamaño total</label></div>
-                <div class="stat"><span id="last-scan">-</span><label>Último escaneo</label></div>
+        <section id="tab-dashboard" class="tab-panel">
+            <h2>Dashboard</h2>
+            <div class="stats-grid" id="dashboard-stats">
+                <div class="stat"><span id="dash-total">-</span><label>Archivos</label></div>
+                <div class="stat"><span id="dash-size">-</span><label>Tamaño total</label></div>
+                <div class="stat"><span id="dash-groups">-</span><label>Grupos</label></div>
+                <div class="stat"><span id="dash-scan">-</span><label>Último escaneo</label></div>
+            </div>
+
+            <h3>Archivos por tipo</h3>
+            <div class="stats-grid" id="type-breakdown">
+                <div class="stat"><span id="type-video">-</span><label>Video</label></div>
+                <div class="stat"><span id="type-audio">-</span><label>Audio</label></div>
+                <div class="stat"><span id="type-pdf">-</span><label>PDF</label></div>
+                <div class="stat"><span id="type-archive">-</span><label>Archivo</label></div>
+                <div class="stat"><span id="type-unknown">-</span><label>Desconocido</label></div>
+            </div>
+
+            <h3>Últimos escaneos</h3>
+            <div class="table-wrap">
+                <table id="scan-jobs-table">
+                    <thead>
+                        <tr>
+                            <th>Inicio</th>
+                            <th>Fin</th>
+                            <th>Ruta</th>
+                            <th>Encontrados</th>
+                            <th>Indexados</th>
+                            <th>Errores</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
             </div>
         </section>
 
-        <section id="browser">
-            <h2>Explorador</h2>
+        <section id="tab-files" class="tab-panel hidden">
+            <h2>Archivos</h2>
             <div class="filters">
                 <input type="text" id="filter-name" placeholder="Buscar por nombre...">
-                <input type="text" id="filter-ext" placeholder="Extensión (mp4, mkv...)">
+                <select id="filter-ext">
+                    <option value="">Cualquier extensión</option>
+                </select>
+                <select id="filter-file-type">
+                    <option value="">Cualquier tipo</option>
+                </select>
+                <select id="filter-subs">
+                    <option value="">Cualquier subtítulos</option>
+                    <option value="true">Con subtítulos</option>
+                    <option value="false">Sin subtítulos</option>
+                </select>
+                <select id="filter-group">
+                    <option value="">Cualquier grupo</option>
+                </select>
                 <input type="number" id="filter-min" placeholder="Tamaño mínimo (bytes)">
                 <input type="number" id="filter-max" placeholder="Tamaño máximo (bytes)">
+                <label class="datetime-label">Después
+                    <input type="datetime-local" id="filter-after">
+                </label>
+                <label class="datetime-label">Antes
+                    <input type="datetime-local" id="filter-before">
+                </label>
+                <select id="filter-sort-by">
+                    <option value="name">Nombre</option>
+                    <option value="size">Tamaño</option>
+                    <option value="duration">Duración</option>
+                    <option value="modified_at">Modificado</option>
+                </select>
+                <select id="filter-sort-order">
+                    <option value="asc">Ascendente</option>
+                    <option value="desc">Descendente</option>
+                </select>
                 <button id="btn-search">Buscar</button>
             </div>
-            <table id="files-table">
-                <thead>
-                    <tr>
-                        <th>Nombre</th>
-                        <th>Ext</th>
-                        <th>Tamaño</th>
-                        <th>Duración</th>
-                        <th>Resolución</th>
-                        <th>Subtítulos</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
+            <p id="results-count" class="results-count">Total: 0 archivos</p>
+            <div class="table-wrap">
+                <table id="files-table">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Ext</th>
+                            <th>Tipo</th>
+                            <th>Tamaño</th>
+                            <th>Duración</th>
+                            <th>Resolución</th>
+                            <th>Subtítulos</th>
+                            <th>Grupo</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
             <div class="pagination">
                 <button id="btn-prev">Anterior</button>
-                <span id="page-info">Página 1</span>
+                <span id="page-info">Mostrando 0-0 de 0</span>
                 <button id="btn-next">Siguiente</button>
             </div>
         </section>
 
+        <section id="tab-groups" class="tab-panel hidden">
+            <h2>Grupos</h2>
+            <div class="filters">
+                <select id="filter-group-kind">
+                    <option value="">Todos los tipos</option>
+                    <option value="series">Series</option>
+                    <option value="movie">Película</option>
+                    <option value="collection">Colección</option>
+                    <option value="other">Otro</option>
+                </select>
+                <button id="btn-filter-groups">Filtrar</button>
+            </div>
+            <div id="groups-grid" class="cards-grid"></div>
+            <section id="group-files" class="hidden">
+                <h3>Archivos del grupo</h3>
+                <div class="table-wrap">
+                    <table id="group-files-table">
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Ext</th>
+                                <th>Tipo</th>
+                                <th>Tamaño</th>
+                                <th>Duración</th>
+                                <th>Resolución</th>
+                                <th>Subtítulos</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+        </section>
+
         <section id="detail" class="hidden">
-            <h2>Detalle</h2>
-            <div id="detail-content"></div>
-            <h3>Notas</h3>
-            <textarea id="note-input" rows="4" placeholder="Añade una nota..."></textarea>
-            <button id="btn-save-note">Guardar nota</button>
+            <h2>Detalle del archivo</h2>
+            <div id="detail-content" class="detail-grid">
+                <div class="detail-col" id="detail-main"></div>
+                <div class="detail-col" id="detail-extra"></div>
+            </div>
+
+            <div class="tags-box">
+                <h3>Etiquetas</h3>
+                <div id="detail-tags" class="tags-list"></div>
+                <div class="tag-input-row">
+                    <input type="text" id="tag-input" placeholder="Nueva etiqueta...">
+                    <button id="btn-add-tag">Añadir</button>
+                </div>
+            </div>
+
+            <div class="notes-box">
+                <h3>Nota actual</h3>
+                <div id="detail-notes"></div>
+                <textarea id="note-input" rows="4" placeholder="Añade una nota..."></textarea>
+                <button id="btn-save-note">Guardar nota</button>
+
+                <h3>Historial de notas</h3>
+                <div id="notes-history"></div>
+            </div>
         </section>
     </main>
 

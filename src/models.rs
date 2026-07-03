@@ -48,6 +48,34 @@ pub struct Group {
     pub file_count: Option<i64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Note {
+    pub id: i64,
+    pub file_id: i64,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Tag {
+    pub id: i64,
+    pub name: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ScanJob {
+    pub id: i64,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub root_path: String,
+    pub files_found: i64,
+    pub files_indexed: i64,
+    pub errors: i64,
+    pub status: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanResult {
     pub files_found: usize,
@@ -60,6 +88,10 @@ pub struct Stats {
     pub total_files: i64,
     pub total_size_bytes: i64,
     pub video_files: i64,
+    pub audio_files: i64,
+    pub pdf_files: i64,
+    pub archive_files: i64,
+    pub unknown_files: i64,
     pub group_count: i64,
     pub last_scan: Option<DateTime<Utc>>,
 }
@@ -73,6 +105,10 @@ pub struct FileFilter {
     pub has_subtitles: Option<bool>,
     pub group_id: Option<i64>,
     pub file_type: Option<String>,
+    pub modified_after: Option<DateTime<Utc>>,
+    pub modified_before: Option<DateTime<Utc>>,
+    pub sort_by: Option<String>,
+    pub sort_order: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
 }
@@ -80,4 +116,9 @@ pub struct FileFilter {
 #[derive(Debug, Clone, Deserialize)]
 pub struct NoteRequest {
     pub content: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TagRequest {
+    pub name: String,
 }

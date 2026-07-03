@@ -46,8 +46,8 @@ mod tests {
     fn create_test_zip(path: &Path) {
         let file = File::create(path).unwrap();
         let mut zip = zip::ZipWriter::new(file);
-        let options: zip::write::FileOptions<()> = zip::write::FileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
+        let options: zip::write::FileOptions<()> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
         zip.start_file("hello.txt", options).unwrap();
         zip.write_all(b"Hello from Alexandria").unwrap();
@@ -70,7 +70,9 @@ mod tests {
 
         let entries = extra["entries"].as_array().unwrap();
         assert!(entries.iter().any(|e| e.as_str() == Some("hello.txt")));
-        assert!(entries.iter().any(|e| e.as_str() == Some("nested/world.txt")));
+        assert!(entries
+            .iter()
+            .any(|e| e.as_str() == Some("nested/world.txt")));
 
         std::fs::remove_file(&path).ok();
     }

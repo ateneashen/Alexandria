@@ -27,7 +27,11 @@ async fn main() -> anyhow::Result<()> {
     let db = Database::new(&config.database_url).await?;
 
     match args.command {
-        Commands::Scan { path, concurrency, force } => {
+        Commands::Scan {
+            path,
+            concurrency,
+            force,
+        } => {
             let abs_path = normalize_path(&path)?;
             tracing::info!("Scanning directory: {}", abs_path.display());
             let result = scan_directory(&db, &abs_path, concurrency, force).await?;
@@ -45,6 +49,10 @@ async fn main() -> anyhow::Result<()> {
             println!("Base de datos: {}", config.database_url);
             println!("Archivos indexados: {}", stats.total_files);
             println!("Archivos de video: {}", stats.video_files);
+            println!("Archivos de audio: {}", stats.audio_files);
+            println!("Archivos PDF: {}", stats.pdf_files);
+            println!("Archivos de archivo: {}", stats.archive_files);
+            println!("Archivos desconocidos: {}", stats.unknown_files);
             println!("Grupos detectados: {}", stats.group_count);
             println!("Tamaño total indexado: {} bytes", stats.total_size_bytes);
             println!("Último escaneo: {:?}", stats.last_scan);
@@ -65,23 +73,87 @@ async fn main() -> anyhow::Result<()> {
         Commands::Regroup => {
             tracing::info!("Recalculando grupos...");
             db.clear_file_groups().await?;
-            let files = db.list_files(&alexandria::models::FileFilter {
-                limit: Some(100000),
-                ..Default::default()
-            }).await?;
+            let files = db
+                .list_files(&alexandria::models::FileFilter {
+                    limit: Some(100000),
+                    ..Default::default()
+                })
+                .await?;
             let mut assigned = 0;
             for file in files {
                 if let Some(group_match) = match_name(&file.name) {
-                    let group_id = db.find_or_create_group(
-                        &group_match.display_name,
-                        group_match.kind.as_str(),
-                        &group_match.canonical_name,
-                    ).await?;
+                    let group_id = db
+                        .find_or_create_group(
+                            &group_match.display_name,
+                            group_match.kind.as_str(),
+                            &group_match.canonical_name,
+                        )
+                        .await?;
                     db.set_file_group(file.id, group_id).await?;
                     assigned += 1;
                 }
             }
-            println!("Regroup completado: {} archivos asignados a grupos", assigned);
+            println!(
+                "Regroup completado: {} archivos asignados a grupos",
+                assigned
+            );
+        }
+        Commands::Note { path, content } => {
+            let abs_path = resolve_path(&path)?;
+            let path_str = abs_path.to_string_lossy().to_string();
+            let file = db.find_file_by_path(&path_str).await?;
+            match file {
+                Some(f) => {
+                    db.update_notes(f.id, &content).await?;
+                    println!("Nota añadida al archivo: {}", f.name);
+                }
+                None => {
+                    eprintln!("Archivo no encontrado en la base de datos: {}", path_str);
+                    std::process::exit(1);
+                }
+            }
+        }
+        Commands::Tag { path, add, remove } => {
+            let abs_path = resolve_path(&path)?;
+            let path_str = abs_path.to_string_lossy().to_string();
+            let file = db.find_file_by_path(&path_str).await?;
+            let file = match file {
+                Some(f) => f,
+                None => {
+                    eprintln!("Archivo no encontrado en la base de datos: {}", path_str);
+                    std::process::exit(1);
+                }
+            };
+
+            if let Some(tag_name) = add {
+                let tag_name = tag_name.trim().to_lowercase();
+                if tag_name.is_empty() {
+                    eprintln!("El nombre de la etiqueta no puede estar vacío");
+                    std::process::exit(1);
+                }
+                let tag_id = db.add_tag(&tag_name).await?;
+                db.assign_tag_to_file(file.id, tag_id).await?;
+                println!("Etiqueta '{}' asignada a {}", tag_name, file.name);
+            }
+
+            if let Some(tag_name) = remove {
+                let tag_name = tag_name.trim().to_lowercase();
+                let tags = db.get_file_tags(file.id).await?;
+                let tag = tags.into_iter().find(|t| t.name == tag_name);
+                match tag {
+                    Some(t) => {
+                        db.remove_tag_from_file(file.id, t.id).await?;
+                        println!("Etiqueta '{}' removida de {}", tag_name, file.name);
+                    }
+                    None => {
+                        eprintln!(
+                            "La etiqueta '{}' no está asignada a {}",
+                            tag_name, file.name
+                        );
+                        std::process::exit(1);
+                    }
+                }
+            }
         }
     }
 
@@ -96,8 +168,8 @@ fn init_logging(config: &AppConfig) -> anyhow::Result<WorkerGuard> {
     let file_appender = tracing_appender::rolling::daily(&logs_dir, "alexandria.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(&config.log_level));
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.log_level));
 
     tracing_subscriber::registry()
         .with(env_filter)
@@ -114,5 +186,16 @@ fn normalize_path(path: &PathBuf) -> anyhow::Result<PathBuf> {
         Ok(path.canonicalize().unwrap_or_else(|_| path.clone()))
     } else {
         Err(anyhow::anyhow!("Path does not exist: {}", path.display()))
+    }
+}
+
+fn resolve_path(path: &PathBuf) -> anyhow::Result<PathBuf> {
+    if path.exists() {
+        Ok(path.canonicalize().unwrap_or_else(|_| path.clone()))
+    } else if path.is_absolute() {
+        Ok(path.clone())
+    } else {
+        let current = std::env::current_dir()?;
+        Ok(current.join(path))
     }
 }

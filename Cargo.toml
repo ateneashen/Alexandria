@@ -1,6 +1,6 @@
 [package]
 name = "alexandria"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Alexandria Contributors"]
 description = "Indexador local de activos digitales: escanea, extrae metadatos de video, audio, PDF y ZIP, y sirve una interfaz web."

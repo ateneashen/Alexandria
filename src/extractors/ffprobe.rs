@@ -37,8 +37,10 @@ pub async fn is_available() -> bool {
 pub async fn extract_video_metadata(path: &Path) -> Result<FileMetadata> {
     let output = Command::new("ffprobe")
         .args([
-            "-v", "error",
-            "-print_format", "json",
+            "-v",
+            "error",
+            "-print_format",
+            "json",
             "-show_format",
             "-show_streams",
         ])

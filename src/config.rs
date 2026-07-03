@@ -10,7 +10,11 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn new(data_dir: Option<PathBuf>, bind_address: Option<String>, log_level: Option<String>) -> Result<Self> {
+    pub fn new(
+        data_dir: Option<PathBuf>,
+        bind_address: Option<String>,
+        log_level: Option<String>,
+    ) -> Result<Self> {
         let data_dir = match data_dir {
             Some(d) => {
                 if d.is_absolute() {
@@ -55,7 +59,8 @@ fn default_data_dir() -> Result<PathBuf> {
     }
 
     // Fallback a directorio de datos del usuario
-    let user_dir = dirs::data_dir()
-        .ok_or_else(|| AlexandriaError::Config("Could not determine user data directory".to_string()))?;
+    let user_dir = dirs::data_dir().ok_or_else(|| {
+        AlexandriaError::Config("Could not determine user data directory".to_string())
+    })?;
     Ok(user_dir.join("Alexandria"))
 }

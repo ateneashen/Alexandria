@@ -122,13 +122,14 @@ AlexandriaProject/
 
 ### Fase 5: Servidor Web e Interfaz
 - [x] Servidor Axum que sirva la API y el frontend estático.
-- [ ] Interfaz HTML/JS para visualización y filtrado.
-- [x] API REST para operaciones (añadir nota, filtrar).
+- [x] Interfaz HTML/JS para visualización, dashboard, grupos y filtrado avanzado.
+- [x] API REST para operaciones (notas, etiquetas, filtrar, ordenar).
 
 ### Fase 6: Extensibilidad y Refinamiento
 - [x] Sistema de módulos para otros formatos (PDF, ZIP, audio).
-- [ ] Mejorar UI/UX.
+- [x] Mejorar UI/UX (dashboard, pestañas, badges, responsividad).
 - [ ] Pruebas de carga y estabilidad en discos grandes.
+- [ ] Soporte para más formatos (RAR, 7z, imágenes, modelos IA).
 
 ## ⚠️ Consideraciones de Seguridad y Robustez
 

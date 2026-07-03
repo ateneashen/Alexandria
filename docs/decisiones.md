@@ -49,3 +49,27 @@
 - **Opciones:** Librerías puras Rust para MP3/FLAC (complejas y con soporte parcial) vs reutilizar ffprobe.
 - **Decision:** Reutilizar `ffprobe` para audio, usando la misma salida JSON que para video.
 - **Justificación:** Unifica el código de análisis multimedia, aprovecha el soporte de múltiples codecs y tags, y mantiene la herramienta opcional.
+
+## [2026-07-03] Notas históricas + nota principal
+- **Contexto:** El esquema inicial ya tenía tabla `notes` pero el endpoint actualizaba solo `files.notes`.
+- **Opciones:**
+  - A: Migrar todo a tabla `notes` y eliminar `files.notes`.
+  - B: Mantener `files.notes` como nota principal rápida y tabla `notes` como historial.
+- **Decision:** B.
+- **Justificación:** Conserva la simplicidad del campo `notes` para lecturas frecuentes (listados, detalle rápido) mientras se guarda un historial inmutable de cambios. El endpoint `POST /api/files/:id/notes` actualiza ambas.
+
+## [2026-07-03] Tags como tabla independiente
+- **Contexto:** Permitir etiquetar archivos de forma libre.
+- **Opciones:**
+  - A: Campo `tags` en `files` como texto plano separado por comas.
+  - B: Tablas normalizadas `tags` y `file_tags` con relación N:M.
+- **Decision:** B.
+- **Justificación:** Facilita búsquedas, evita duplicados de nombres, permite renombrar etiquetas globalmente y es más escalable para futuras relaciones (grupos, filtros, etc.).
+
+## [2026-07-03] Filtros y ordenamiento dinámicos en SQL
+- **Contexto:** La UI requiere ordenar y filtrar por fecha de modificación.
+- **Opciones:**
+  - A: Ordenar y filtrar en memoria después de traer datos.
+  - B: Construir SQL dinámico con `match` para columnas/orden permitidos.
+- **Decision:** B.
+- **Justificación:** Eficiencia en grandes volúmenes; el `match` en Rust sobre valores fijos evita inyección SQL sin necesidad de ORM.

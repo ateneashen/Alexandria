@@ -31,7 +31,11 @@ fn normalize_separators(name: &str) -> String {
     let name = name.rsplit_once('.').map(|(base, _)| base).unwrap_or(name);
     let name = name.to_lowercase();
     let name = name.replace(['.', '_', '-'], " ");
-    Regex::new(r"\s+").unwrap().replace_all(&name, " ").trim().to_string()
+    Regex::new(r"\s+")
+        .unwrap()
+        .replace_all(&name, " ")
+        .trim()
+        .to_string()
 }
 
 /// Clean a title by removing metadata tokens (quality, release tags, brackets).
@@ -39,8 +43,14 @@ fn clean_title(name: &str) -> String {
     let name = name.to_lowercase();
     let name = name.replace(['.', '_', '-'], " ");
     let name = Regex::new(r"\b(1080p|720p|2160p|4k|8k|hdr|dv|blu-?ray|remux|web-?dl|webrip|hdtv|x264|x265|hevc|avc|aac|dts|hdma|truehd|atmos)\b").unwrap().replace_all(&name, " ");
-    let name = Regex::new(r"[\(\[\{].*?[\)\]\}]").unwrap().replace_all(&name, " ");
-    Regex::new(r"\s+").unwrap().replace_all(&name, " ").trim().to_string()
+    let name = Regex::new(r"[\(\[\{].*?[\)\]\}]")
+        .unwrap()
+        .replace_all(&name, " ");
+    Regex::new(r"\s+")
+        .unwrap()
+        .replace_all(&name, " ")
+        .trim()
+        .to_string()
 }
 
 /// Detect if a filename represents a TV episode.
@@ -85,7 +95,10 @@ fn detect_movie(name: &str) -> Option<MatchResult> {
         .replace_all(&canonical_base, " ")
         .trim()
         .to_string();
-    let canonical_base = Regex::new(r"\s+").unwrap().replace_all(&canonical_base, " ").to_string();
+    let canonical_base = Regex::new(r"\s+")
+        .unwrap()
+        .replace_all(&canonical_base, " ")
+        .to_string();
     if canonical_base.is_empty() || canonical_base.split_whitespace().count() < 1 {
         return None;
     }
@@ -146,8 +159,16 @@ mod tests {
     #[test]
     fn test_movie_patterns() {
         let cases = [
-            ("Movie.Name.2024.1080p.BluRay.mp4", GroupKind::Movie, "movie name"),
-            ("Movie Name (2024) Directors Cut.mkv", GroupKind::Movie, "movie name"),
+            (
+                "Movie.Name.2024.1080p.BluRay.mp4",
+                GroupKind::Movie,
+                "movie name",
+            ),
+            (
+                "Movie Name (2024) Directors Cut.mkv",
+                GroupKind::Movie,
+                "movie name",
+            ),
         ];
         for (input, expected_kind, expected_name) in cases {
             let result = match_name(input).expect("should match movie");

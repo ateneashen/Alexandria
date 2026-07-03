@@ -16,7 +16,10 @@ pub async fn serve(config: &AppConfig, db: Database) -> anyhow::Result<()> {
         .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(&config.bind_address).await?;
-    tracing::info!("Alexandria server listening on http://{}", config.bind_address);
+    tracing::info!(
+        "Alexandria server listening on http://{}",
+        config.bind_address
+    );
 
     axum::serve(listener, app).await?;
     Ok(())

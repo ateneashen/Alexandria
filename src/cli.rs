@@ -23,7 +23,12 @@ pub enum Commands {
         #[arg(help = "Ruta a escanear")]
         path: PathBuf,
 
-        #[arg(short, long, help = "Número máximo de tareas concurrentes", default_value = "4")]
+        #[arg(
+            short,
+            long,
+            help = "Número máximo de tareas concurrentes",
+            default_value = "4"
+        )]
         concurrency: usize,
 
         #[arg(short, long, help = "Re-escanear archivos ya indexados")]
@@ -32,7 +37,12 @@ pub enum Commands {
 
     #[command(about = "Iniciar el servidor web")]
     Serve {
-        #[arg(short, long, help = "Dirección y puerto", default_value = "127.0.0.1:3000")]
+        #[arg(
+            short,
+            long,
+            help = "Dirección y puerto",
+            default_value = "127.0.0.1:3000"
+        )]
         bind: String,
     },
 
@@ -47,4 +57,25 @@ pub enum Commands {
 
     #[command(about = "Recalcular grupos para archivos ya indexados")]
     Regroup,
+
+    #[command(about = "Añade o actualiza una nota para un archivo")]
+    Note {
+        #[arg(help = "Ruta exacta del archivo indexado")]
+        path: PathBuf,
+
+        #[arg(short, long, help = "Contenido de la nota")]
+        content: String,
+    },
+
+    #[command(about = "Asigna o remueve etiquetas de un archivo")]
+    Tag {
+        #[arg(help = "Ruta exacta del archivo indexado")]
+        path: PathBuf,
+
+        #[arg(short, long, help = "Etiqueta a añadir")]
+        add: Option<String>,
+
+        #[arg(short, long, help = "Etiqueta a remover")]
+        remove: Option<String>,
+    },
 }

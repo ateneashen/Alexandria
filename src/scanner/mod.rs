@@ -57,8 +57,19 @@ pub async fn scan_directory(
         }
     }
 
-    let status = if errors > 0 { "completed_with_errors" } else { "completed" };
-    db.finish_scan_job(job_id, files_found as i64, indexed as i64, errors as i64, status).await?;
+    let status = if errors > 0 {
+        "completed_with_errors"
+    } else {
+        "completed"
+    };
+    db.finish_scan_job(
+        job_id,
+        files_found as i64,
+        indexed as i64,
+        errors as i64,
+        status,
+    )
+    .await?;
 
     tracing::info!(
         "Scan finished: {} found, {} indexed, {} errors",

@@ -26,8 +26,10 @@ struct FfprobeStream {
 pub async fn extract_audio_metadata(path: &Path) -> Result<FileMetadata> {
     let output = Command::new("ffprobe")
         .args([
-            "-v", "error",
-            "-print_format", "json",
+            "-v",
+            "error",
+            "-print_format",
+            "json",
             "-show_format",
             "-show_streams",
         ])
