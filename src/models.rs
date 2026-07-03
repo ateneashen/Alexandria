@@ -21,6 +21,7 @@ pub struct FileEntry {
     pub subtitle_tracks: Option<String>,
     pub extra_json: Option<String>,
     pub notes: Option<String>,
+    pub group_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -37,6 +38,16 @@ pub struct FileMetadata {
     pub extra_json: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Group {
+    pub id: i64,
+    pub name: String,
+    pub kind: String,
+    pub canonical_name: String,
+    pub created_at: DateTime<Utc>,
+    pub file_count: Option<i64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanResult {
     pub files_found: usize,
@@ -49,16 +60,19 @@ pub struct Stats {
     pub total_files: i64,
     pub total_size_bytes: i64,
     pub video_files: i64,
+    pub group_count: i64,
     pub last_scan: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct FileFilter {
     pub name: Option<String>,
     pub extension: Option<String>,
     pub min_size: Option<i64>,
     pub max_size: Option<i64>,
     pub has_subtitles: Option<bool>,
+    pub group_id: Option<i64>,
+    pub file_type: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
 }

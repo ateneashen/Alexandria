@@ -8,6 +8,7 @@ use axum::{
     Router,
 };
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -20,6 +21,9 @@ pub fn api_routes(state: Arc<AppState>) -> Router {
         .route("/api/files", get(list_files))
         .route("/api/files/:id", get(get_file))
         .route("/api/files/:id/notes", post(update_notes))
+        .route("/api/groups", get(list_groups))
+        .route("/api/groups/:id", get(get_group))
+        .route("/api/groups/:id/files", get(list_group_files))
         .route("/api/stats", get(get_stats))
         .route("/api/health", get(health))
         .with_state(state)
@@ -57,6 +61,40 @@ async fn update_notes(
     }
     state.db.update_notes(id, &payload.content).await?;
     Ok(Json(json!({ "status": "ok", "file_id": id })))
+}
+
+#[derive(Debug, Deserialize)]
+struct GroupFilter {
+    kind: Option<String>,
+}
+
+async fn list_groups(
+    State(state): State<Arc<AppState>>,
+    Query(filter): Query<GroupFilter>,
+) -> Result<Json<serde_json::Value>> {
+    let groups = state.db.list_groups(filter.kind.as_deref()).await?;
+    Ok(Json(json!({ "data": groups })))
+}
+
+async fn get_group(
+    State(state): State<Arc<AppState>>,
+    AxumPath(id): AxumPath<i64>,
+) -> Result<Json<serde_json::Value>> {
+    let group = state.db.get_group(id).await?;
+    Ok(Json(json!({ "data": group })))
+}
+
+async fn list_group_files(
+    State(state): State<Arc<AppState>>,
+    AxumPath(id): AxumPath<i64>,
+) -> Result<Json<serde_json::Value>> {
+    let filter = FileFilter {
+        group_id: Some(id),
+        limit: Some(1000),
+        ..Default::default()
+    };
+    let files = state.db.list_files(&filter).await?;
+    Ok(Json(json!({ "data": files })))
 }
 
 async fn get_stats(State(state): State<Arc<AppState>>) -> Result<Json<Stats>> {

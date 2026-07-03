@@ -1,5 +1,5 @@
 use crate::error::{AlexandriaError, Result};
-use crate::models::{FileEntry, FileFilter, FileMetadata, Stats};
+use crate::models::{FileEntry, FileFilter, FileMetadata, Group, Stats};
 use chrono::{DateTime, Utc};
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Row, Sqlite};
 use std::path::Path;
@@ -47,6 +47,7 @@ impl Database {
         size_bytes: i64,
         modified_at: DateTime<Utc>,
         metadata: &FileMetadata,
+        group_id: Option<i64>,
     ) -> Result<i64> {
         let path_str = path.to_string_lossy();
         let ext = extension.unwrap_or("");
@@ -62,9 +63,9 @@ impl Database {
             INSERT INTO files (
                 path, name, extension, size_bytes, modified_at, scanned_at,
                 file_type, duration_seconds, width, height, video_codec, audio_codec,
-                has_subtitles, audio_tracks, subtitle_tracks, extra_json
+                has_subtitles, audio_tracks, subtitle_tracks, extra_json, group_id
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
             ON CONFLICT(path) DO UPDATE SET
                 name = excluded.name,
                 extension = excluded.extension,
@@ -80,7 +81,8 @@ impl Database {
                 has_subtitles = excluded.has_subtitles,
                 audio_tracks = excluded.audio_tracks,
                 subtitle_tracks = excluded.subtitle_tracks,
-                extra_json = excluded.extra_json
+                extra_json = excluded.extra_json,
+                group_id = excluded.group_id
             RETURNING id
             "#,
         )
@@ -100,6 +102,7 @@ impl Database {
         .bind(audio_tracks)
         .bind(subtitle_tracks)
         .bind(extra_json)
+        .bind(group_id)
         .fetch_one(&self.pool)
         .await?;
 
@@ -110,7 +113,7 @@ impl Database {
         let mut sql = String::from(
             "SELECT id, path, name, extension, size_bytes, modified_at, scanned_at, file_type, \
              duration_seconds, width, height, video_codec, audio_codec, has_subtitles, \
-             audio_tracks, subtitle_tracks, extra_json, notes FROM files WHERE 1=1"
+             audio_tracks, subtitle_tracks, extra_json, notes, group_id FROM files WHERE 1=1"
         );
 
         if filter.name.is_some() {
@@ -118,6 +121,9 @@ impl Database {
         }
         if filter.extension.is_some() {
             sql.push_str(" AND extension = ?");
+        }
+        if filter.file_type.is_some() {
+            sql.push_str(" AND file_type = ?");
         }
         if filter.min_size.is_some() {
             sql.push_str(" AND size_bytes >= ?");
@@ -127,6 +133,9 @@ impl Database {
         }
         if filter.has_subtitles.is_some() {
             sql.push_str(" AND has_subtitles = ?");
+        }
+        if filter.group_id.is_some() {
+            sql.push_str(" AND group_id = ?");
         }
         sql.push_str(" ORDER BY name LIMIT ? OFFSET ?");
 
@@ -141,6 +150,9 @@ impl Database {
         if let Some(ext) = &filter.extension {
             query = query.bind(ext.to_lowercase());
         }
+        if let Some(ft) = &filter.file_type {
+            query = query.bind(ft.to_lowercase());
+        }
         if let Some(min) = filter.min_size {
             query = query.bind(min);
         }
@@ -149,6 +161,9 @@ impl Database {
         }
         if let Some(subs) = filter.has_subtitles {
             query = query.bind(if subs { 1 } else { 0 });
+        }
+        if let Some(gid) = filter.group_id {
+            query = query.bind(gid);
         }
         query = query.bind(limit).bind(offset);
 
@@ -160,7 +175,7 @@ impl Database {
         let row = sqlx::query_as::<_, FileEntry>(
             "SELECT id, path, name, extension, size_bytes, modified_at, scanned_at, file_type, \
              duration_seconds, width, height, video_codec, audio_codec, has_subtitles, \
-             audio_tracks, subtitle_tracks, extra_json, notes FROM files WHERE id = ?"
+             audio_tracks, subtitle_tracks, extra_json, notes, group_id FROM files WHERE id = ?"
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -186,6 +201,7 @@ impl Database {
         let row = sqlx::query(
             "SELECT COUNT(*) as total, COALESCE(SUM(size_bytes), 0) as total_size, \
              SUM(CASE WHEN file_type = 'video' THEN 1 ELSE 0 END) as video_count, \
+             (SELECT COUNT(*) FROM groups) as group_count, \
              MAX(scanned_at) as last_scan FROM files"
         )
         .fetch_one(&self.pool)
@@ -194,12 +210,14 @@ impl Database {
         let total_files: i64 = row.try_get("total")?;
         let total_size_bytes: i64 = row.try_get("total_size")?;
         let video_files: i64 = row.try_get("video_count")?;
+        let group_count: i64 = row.try_get("group_count")?;
         let last_scan: Option<DateTime<Utc>> = row.try_get("last_scan")?;
 
         Ok(Stats {
             total_files,
             total_size_bytes,
             video_files,
+            group_count,
             last_scan,
         })
     }
@@ -232,5 +250,97 @@ impl Database {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    // Group operations
+
+    pub async fn find_or_create_group(
+        &self,
+        name: &str,
+        kind: &str,
+        canonical_name: &str,
+    ) -> Result<i64> {
+        let id: i64 = sqlx::query_scalar(
+            r#"
+            INSERT INTO groups (name, kind, canonical_name)
+            VALUES (?1, ?2, ?3)
+            ON CONFLICT(canonical_name) DO UPDATE SET
+                name = excluded.name,
+                kind = excluded.kind
+            RETURNING id
+            "#,
+        )
+        .bind(name)
+        .bind(kind)
+        .bind(canonical_name)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(id)
+    }
+
+    pub async fn list_groups(&self, kind: Option<&str>) -> Result<Vec<Group>> {
+        let sql = if kind.is_some() {
+            r#"
+            SELECT g.id, g.name, g.kind, g.canonical_name, g.created_at,
+                   COUNT(f.id) as file_count
+            FROM groups g
+            LEFT JOIN files f ON f.group_id = g.id
+            WHERE g.kind = ?
+            GROUP BY g.id
+            ORDER BY file_count DESC, g.name
+            "#
+        } else {
+            r#"
+            SELECT g.id, g.name, g.kind, g.canonical_name, g.created_at,
+                   COUNT(f.id) as file_count
+            FROM groups g
+            LEFT JOIN files f ON f.group_id = g.id
+            GROUP BY g.id
+            ORDER BY file_count DESC, g.name
+            "#
+        };
+
+        let mut query = sqlx::query_as::<_, Group>(sql);
+        if let Some(k) = kind {
+            query = query.bind(k);
+        }
+        let rows = query.fetch_all(&self.pool).await?;
+        Ok(rows)
+    }
+
+    pub async fn get_group(&self, id: i64) -> Result<Group> {
+        let row = sqlx::query_as::<_, Group>(
+            r#"
+            SELECT g.id, g.name, g.kind, g.canonical_name, g.created_at,
+                   COUNT(f.id) as file_count
+            FROM groups g
+            LEFT JOIN files f ON f.group_id = g.id
+            WHERE g.id = ?
+            GROUP BY g.id
+            "#
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.ok_or_else(|| AlexandriaError::NotFound(format!("Group with id {} not found", id)))
+    }
+
+    pub async fn clear_file_groups(&self) -> Result<()> {
+        sqlx::query("UPDATE files SET group_id = NULL").execute(&self.pool).await?;
+        Ok(())
+    }
+
+    pub async fn set_file_group(&self, file_id: i64, group_id: i64) -> Result<()> {
+        sqlx::query("UPDATE files SET group_id = ? WHERE id = ?")
+            .bind(group_id)
+            .bind(file_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub fn pool(&self) -> &Pool<Sqlite> {
+        &self.pool
     }
 }

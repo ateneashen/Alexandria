@@ -38,4 +38,13 @@ pub enum Commands {
 
     #[command(about = "Mostrar información de la base de datos")]
     Info,
+
+    #[command(about = "Listar grupos detectados")]
+    Groups {
+        #[arg(short, long, help = "Filtrar por tipo (series, movie, collection)")]
+        kind: Option<String>,
+    },
+
+    #[command(about = "Recalcular grupos para archivos ya indexados")]
+    Regroup,
 }

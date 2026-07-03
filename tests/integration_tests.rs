@@ -7,19 +7,11 @@ use alexandria::db::Database;
 use alexandria::models::FileMetadata;
 use alexandria::server::routes::{api_routes, static_routes, AppState};
 
-#[tokio::test]
-async fn test_database_can_connect_to_memory() {
-    let db = Database::new("sqlite::memory:").await.unwrap();
-    let stats = db.stats().await.unwrap();
-    assert_eq!(stats.total_files, 0);
-}
-
 fn test_db_url() -> (String, std::path::PathBuf) {
     let test_dir = std::path::PathBuf::from("C:/ai/alexandria-test");
     std::fs::create_dir_all(&test_dir).unwrap();
     let file_name = format!("test-{}.db", uuid::Uuid::new_v4());
     let db_path = test_dir.join(&file_name);
-    // Create empty file so SQLite only has to open it, not create it.
     std::fs::File::create(&db_path).unwrap();
     let db_path_str = db_path.to_string_lossy().replace('\\', "/");
     let url = format!("sqlite:///{}", db_path_str);
@@ -28,9 +20,15 @@ fn test_db_url() -> (String, std::path::PathBuf) {
 
 async fn setup_test_db() -> (Database, std::path::PathBuf) {
     let (database_url, db_path) = test_db_url();
-    eprintln!("Using database URL: {}", database_url);
     let db = Database::new(&database_url).await.unwrap();
     (db, db_path)
+}
+
+#[tokio::test]
+async fn test_database_can_connect_to_memory() {
+    let db = Database::new("sqlite::memory:").await.unwrap();
+    let stats = db.stats().await.unwrap();
+    assert_eq!(stats.total_files, 0);
 }
 
 #[tokio::test]
@@ -92,6 +90,7 @@ async fn test_insert_and_list_files() {
         1_000_000,
         chrono::Utc::now(),
         &metadata,
+        None,
     )
     .await
     .unwrap();
@@ -101,6 +100,43 @@ async fn test_insert_and_list_files() {
 
     let response = app
         .oneshot(Request::builder().uri("/api/files").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_groups_endpoint() {
+    let (db, _path) = setup_test_db().await;
+
+    let group_id = db
+        .find_or_create_group("show name", "series", "series:show.name")
+        .await
+        .unwrap();
+
+    let metadata = FileMetadata {
+        file_type: "video".to_string(),
+        ..Default::default()
+    };
+
+    db.insert_or_update_file(
+        std::path::Path::new("/tmp/Show.Name.S01E01.mp4"),
+        "Show.Name.S01E01.mp4",
+        Some("mp4"),
+        100,
+        chrono::Utc::now(),
+        &metadata,
+        Some(group_id),
+    )
+    .await
+    .unwrap();
+
+    let state = Arc::new(AppState { db });
+    let app = api_routes(state);
+
+    let response = app
+        .oneshot(Request::builder().uri("/api/groups").body(Body::empty()).unwrap())
         .await
         .unwrap();
 

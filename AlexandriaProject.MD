@@ -62,7 +62,8 @@ AlexandriaProject/
 │   ├── decisiones.md
 │   └── errores.md
 ├── schemas/                  # Definición de esquemas de la BD (SQL)
-│   └── 001_initial.sql
+│   ├── 1_initial.sql
+│   └── 2_add_groups.sql
 ├── src/
 │   ├── main.rs               # Punto de entrada y lógica de inicialización
 │   ├── cli.rs                # Argumentos de línea de comandos
@@ -70,6 +71,7 @@ AlexandriaProject/
 │   ├── db.rs                 # Gestión de SQLite (migraciones, CRUD)
 │   ├── models.rs             # Estructuras de datos compartidas
 │   ├── error.rs              # Tipos de error de la aplicación
+│   ├── groups/               # Motor de agrupación por patrones
 │   ├── scanner/              # Motor de escaneo de directorios
 │   ├── extractors/           # Lógica para extraer datos por tipo
 │   └── server/               # Servidor HTTP, API REST y frontend estático
@@ -102,21 +104,27 @@ AlexandriaProject/
 - [x] Definir esquema de la base de datos SQLite.
 
 ### Fase 2: Escáner y Extractores (Video)
-- [ ] Implementar escaneo recursivo de archivos.
-- [ ] Implementar extractor de metadatos para videos.
-- [ ] Integrar con `ffprobe` de forma opcional.
-- [ ] Guardar metadatos en SQLite.
+- [x] Implementar escaneo recursivo de archivos.
+- [x] Implementar extractor de metadatos para videos.
+- [x] Integrar con `ffprobe` de forma opcional.
+- [x] Guardar metadatos en SQLite.
 
-### Fase 3: Servidor Web e Interfaz
-- [ ] Servidor Axum que sirva la API y el frontend estático.
+### Fase 3: Agrupación y Patrones
+- [x] Implementar agrupación por patrones: series, películas y colecciones.
+- [x] Crear tabla de "groups" en la BD y asignar `group_id` a archivos.
+- [x] API REST para grupos (`/api/groups`).
+- [x] CLI `groups` y `regroup`.
+
+### Fase 4: Base de Datos y Notas
+- [x] Tablas para notes y user_tags.
+- [x] Funcionalidad para añadir notas desde CLI o Web.
+
+### Fase 5: Servidor Web e Interfaz
+- [x] Servidor Axum que sirva la API y el frontend estático.
 - [ ] Interfaz HTML/JS para visualización y filtrado.
-- [ ] API REST para operaciones (añadir nota, filtrar).
+- [x] API REST para operaciones (añadir nota, filtrar).
 
-### Fase 4: Agrupación y Patrones
-- [ ] Detectar series y películas duplicadas por nombre.
-- [ ] Crear tabla de "grupos" en la BD.
-
-### Fase 5: Extensibilidad y Refinamiento
+### Fase 6: Extensibilidad y Refinamiento
 - [ ] Sistema de módulos para otros formatos (PDF, ZIP).
 - [ ] Mejorar UI/UX.
 - [ ] Pruebas de carga y estabilidad en discos grandes.

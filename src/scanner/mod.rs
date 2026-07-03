@@ -4,6 +4,7 @@ use crate::db::Database;
 use crate::error::Result;
 use crate::extractors;
 use crate::extractors::fs::extract_fs_metadata;
+use crate::groups::match_name;
 use crate::models::ScanResult;
 use std::path::Path;
 use std::sync::Arc;
@@ -83,6 +84,18 @@ async fn process_file(db: &Database, path: &Path, ffprobe_available: bool) -> Re
 
     let metadata = extractors::extract_metadata(path, ffprobe_available).await;
 
+    let group_id = match match_name(&name) {
+        Some(group_match) => Some(
+            db.find_or_create_group(
+                &group_match.display_name,
+                group_match.kind.as_str(),
+                &group_match.canonical_name,
+            )
+            .await?,
+        ),
+        None => None,
+    };
+
     db.insert_or_update_file(
         path,
         &name,
@@ -90,6 +103,7 @@ async fn process_file(db: &Database, path: &Path, ffprobe_available: bool) -> Re
         size_bytes,
         modified_at,
         &metadata,
+        group_id,
     )
     .await?;
 

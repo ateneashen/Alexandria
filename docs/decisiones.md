@@ -23,3 +23,11 @@
 - **Opciones:** React/Vue/Svelte vs vanilla JS.
 - **Decision:** Vanilla JS/CSS/HTML embebido con `include_str!`.
 - **Justificación:** Cero dependencias de build, frontend se incluye en el binario, ideal para portabilidad.
+
+## [2026-07-03] Diseño del sistema de grupos
+- **Contexto:** Necesitamos detectar series, películas duplicadas/versiones y colecciones por nombre.
+- **Opciones:**
+  - A: Algoritmo puramente basado en distancia de strings (Levenshtein).
+  - B: Reglas basadas en expresiones regulares para patrones conocidos (S01E02, años, etc.) más fallback por prefijo.
+- **Decision:** B.
+- **Justificación:** Es más predecible, explicable y rápido para el usuario. Detecta series y películas con alta confianza sin requerir entrenamiento ni umbrales mágicos. El fallback por prefijo cubre casos generales.
