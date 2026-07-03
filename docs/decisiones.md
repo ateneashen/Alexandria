@@ -31,3 +31,21 @@
   - B: Reglas basadas en expresiones regulares para patrones conocidos (S01E02, años, etc.) más fallback por prefijo.
 - **Decision:** B.
 - **Justificación:** Es más predecible, explicable y rápido para el usuario. Detecta series y películas con alta confianza sin requerir entrenamiento ni umbrales mágicos. El fallback por prefijo cubre casos generales.
+
+## [2026-07-03] Extracción de PDF con `lopdf`
+- **Contexto:** Ampliar soporte a documentos PDF.
+- **Opciones:** `lopdf` (puramente Rust, parsea la estructura PDF) vs herramientas externas como `pdfinfo`.
+- **Decision:** `lopdf` con el parser `nom` y sin features por defecto.
+- **Justificación:** No requiere binarios externos, se integra en el binario final y es suficiente para leer el diccionario `Info` y contar páginas. Se deshabilitaron features innecesarias para reducir dependencias.
+
+## [2026-07-03] Extracción de ZIP con `zip`
+- **Contexto:** Listar contenido de archivos comprimidos.
+- **Opciones:** `zip` (librería Rust madura para .zip) vs ejecutar `unzip -l`.
+- **Decision:** `zip` con compresión `deflate` y `Stored`.
+- **Justificación:** Procesamiento local, sin dependencia de utilidades del sistema operativo. Permite obtener conteo de entradas y nombres de archivos de forma rápida.
+
+## [2026-07-03] Metadatos de audio vía `ffprobe`
+- **Contexto:** Reutilizar la infraestructura de extracción para audio.
+- **Opciones:** Librerías puras Rust para MP3/FLAC (complejas y con soporte parcial) vs reutilizar ffprobe.
+- **Decision:** Reutilizar `ffprobe` para audio, usando la misma salida JSON que para video.
+- **Justificación:** Unifica el código de análisis multimedia, aprovecha el soporte de múltiples codecs y tags, y mantiene la herramienta opcional.

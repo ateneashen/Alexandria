@@ -3,7 +3,7 @@
 > Proyecto generado en: `C:\AI\2026 Projects\KIMI\AlexandriaProject`
 
 ## 📖 Visión General
-**Alexandria** es una aplicación escrita en Rust diseñada para escanear sistemas de archivos locales, extraer metadatos de archivos (foco inicial en video) y crear una base de datos centralizada accesible vía navegador.
+**Alexandria** es una aplicación escrita en Rust diseñada para escanear sistemas de archivos locales, extraer metadatos de archivos (video, audio, PDF, ZIP y más en el futuro) y crear una base de datos centralizada accesible vía navegador.
 
 El objetivo final es convertirse en un gestor universal de activos digitales con capacidades de:
 1. **Ingesta masiva:** Escaneo recursivo de discos duros.
@@ -31,12 +31,10 @@ El objetivo final es convertirse en un gestor universal de activos digitales con
 - Crear notas personalizadas por usuario para ficheros o grupos filtrados.
 - Sistema de búsqueda semántica (por nombre, tamaño, etiquetas).
 
-### 4. Extensibilidad (Fase Futura)
-- Soporte para:
-  - **Documentos:** PDF, DOCX (extraer título, autor, palabras).
-  - **Backups:** ZIP, RAR, TAR (listar contenido).
-  - **Modelos IA:** Weights, checkpoints (extraer nombre de modelo, tamaño).
-- Diseño de módulos para nuevos extractores de metadatos.
+### 4. Extensibilidad
+- Arquitectura de extractores plug-and-play bajo `src/extractors/`.
+- Formatos ya soportados: video, audio, PDF, ZIP.
+- Formatos futuros: DOCX, RAR, 7z, imágenes, modelos IA, etc.
 
 ## 🏗️ Arquitectura Técnica
 
@@ -46,7 +44,9 @@ El objetivo final es convertirse en un gestor universal de activos digitales con
 - **Servidor Web:** Axum (ligero, moderno, basado en Tokio).
 - **Frontend:** HTML5 + CSS3 + JavaScript vanilla, embebido en el binario.
 - **Herramientas de Análisis:**
-  - `ffprobe` opcional para inspección profunda de video.
+  - `ffprobe` opcional para inspección profunda de video y audio.
+  - `lopdf` para metadatos de PDF.
+  - `zip` para listado de contenidos ZIP.
   - Extracción básica del sistema de archivos como fallback.
 
 ### Estructura del Proyecto
@@ -103,11 +103,12 @@ AlexandriaProject/
 - [x] Implementar sistema de logs con `tracing`.
 - [x] Definir esquema de la base de datos SQLite.
 
-### Fase 2: Escáner y Extractores (Video)
-- [x] Implementar escaneo recursivo de archivos.
-- [x] Implementar extractor de metadatos para videos.
-- [x] Integrar con `ffprobe` de forma opcional.
-- [x] Guardar metadatos en SQLite.
+### Fase 2: Más Formatos (v0.2.0)
+- [x] Implementar extractor de metadatos para audio (vía `ffprobe`).
+- [x] Implementar extractor de metadatos para PDF (`lopdf`).
+- [x] Implementar extractor de contenido para ZIP.
+- [x] Detectar tipo de archivo (`audio`, `pdf`, `archive`) en el escáner.
+- [x] Guardar metadatos extendidos en `extra_json`.
 
 ### Fase 3: Agrupación y Patrones
 - [x] Implementar agrupación por patrones: series, películas y colecciones.
@@ -125,7 +126,7 @@ AlexandriaProject/
 - [x] API REST para operaciones (añadir nota, filtrar).
 
 ### Fase 6: Extensibilidad y Refinamiento
-- [ ] Sistema de módulos para otros formatos (PDF, ZIP).
+- [x] Sistema de módulos para otros formatos (PDF, ZIP, audio).
 - [ ] Mejorar UI/UX.
 - [ ] Pruebas de carga y estabilidad en discos grandes.
 

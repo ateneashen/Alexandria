@@ -1,11 +1,13 @@
 # Alexandria
 
-Indexador local de activos digitales escrito en Rust. Escanea directorios, extrae metadatos (foco inicial en video), detecta grupos por patrones de nombre y los sirve a través de una interfaz web ligera.
+Indexador local de activos digitales escrito en Rust. Escanea directorios, extrae metadatos de video, audio, PDF y ZIP, detecta grupos por patrones de nombre y los sirve a través de una interfaz web ligera.
 
 ## Características
 
 - **CLI portable**: escanea carpetas, levanta servidor y consulta estadísticas.
-- **Metadatos de video**: duración, resolución, codecs, pistas de audio y subtítulos (via `ffprobe` si está disponible).
+- **Metadatos de video**: duración, resolución, codecs, pistas de audio y subtítulos (vía `ffprobe`).
+- **Metadatos de audio**: duración, codec y tags (título, artista, álbum, género, fecha) vía `ffprobe`.
+- **Documentos y archivos comprimidos**: extracción de páginas e información de PDFs (`lopdf`) y listado de contenido de archivos ZIP.
 - **Agrupación inteligente**: detecta automáticamente series, películas (incluyendo versiones/remakes) y colecciones por prefijo.
 - **Base de datos SQLite embebida**: sin instalación externa.
 - **Interfaz web vanilla**: embebida en el binario, lista para usar.
@@ -15,7 +17,7 @@ Indexador local de activos digitales escrito en Rust. Escanea directorios, extra
 ## Requisitos
 
 - [Rust](https://www.rust-lang.org/) 1.75 o superior.
-- (Opcional) `ffprobe` en el PATH para metadatos avanzados de video.
+- (Opcional) `ffprobe` en el PATH para metadatos avanzados de video y audio.
 
 ## Instalación
 
@@ -152,8 +154,8 @@ cargo test
 Ver [AlexandriaProject.MD](AlexandriaProject.MD) para la hoja de ruta completa.
 
 Próximas fases:
-- Soporte para PDF, ZIP y audio.
-- Mejoras de UI/UX en el frontend.
+- Mejoras de UI/UX en el frontend (dashboard, grupos, filtros avanzados).
+- Soporte para más formatos de archivo (RAR, 7z, imágenes, etc.).
 
 ## Licencia
 
