@@ -1,0 +1,40 @@
+[package]
+name = "alexandria"
+version = "0.1.0"
+edition = "2021"
+authors = ["Alexandria Contributors"]
+description = "Indexador de activos digitales local: escanea, extrae metadatos y sirve una interfaz web."
+license = "MIT"
+repository = "https://github.com/tu-usuario/alexandria"
+rust-version = "1.75"
+
+[dependencies]
+tokio = { version = "1.38", features = ["full"] }
+axum = "0.7"
+tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
+sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "migrate", "chrono"] }
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-appender = "0.2"
+anyhow = "1.0"
+thiserror = "1.0"
+config = "0.14"
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1.10"
+tokio-util = "0.7"
+dirs = "5.0"
+urlencoding = "2.1"
+url = "2.5"
+uuid = { version = "1.9", features = ["v4", "serde"] }
+
+[dev-dependencies]
+tempfile = "3.10"
+tower = { version = "0.4", features = ["util"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true

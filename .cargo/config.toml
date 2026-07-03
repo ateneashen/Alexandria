@@ -1,0 +1,16 @@
+# Configuración local de Cargo para desarrollo en mainland China.
+# Si no estás en China, puedes eliminar o ignorar este archivo.
+
+[registries.crates-io]
+protocol = "sparse"
+index = "https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"
+
+[http]
+proxy = ""
+
+[https]
+proxy = ""
+
+[net]
+retry = 3
+git-fetch-with-cli = true

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alexandria</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <header>
+        <h1>Alexandria</h1>
+        <p>Indexador local de activos digitales</p>
+    </header>
+
+    <main>
+        <section id="stats">
+            <h2>Estadísticas</h2>
+            <div class="stats-grid">
+                <div class="stat"><span id="total-files">-</span><label>Archivos</label></div>
+                <div class="stat"><span id="video-files">-</span><label>Videos</label></div>
+                <div class="stat"><span id="total-size">-</span><label>Tamaño total</label></div>
+                <div class="stat"><span id="last-scan">-</span><label>Último escaneo</label></div>
+            </div>
+        </section>
+
+        <section id="browser">
+            <h2>Explorador</h2>
+            <div class="filters">
+                <input type="text" id="filter-name" placeholder="Buscar por nombre...">
+                <input type="text" id="filter-ext" placeholder="Extensión (mp4, mkv...)">
+                <input type="number" id="filter-min" placeholder="Tamaño mínimo (bytes)">
+                <input type="number" id="filter-max" placeholder="Tamaño máximo (bytes)">
+                <button id="btn-search">Buscar</button>
+            </div>
+            <table id="files-table">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Ext</th>
+                        <th>Tamaño</th>
+                        <th>Duración</th>
+                        <th>Resolución</th>
+                        <th>Subtítulos</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <div class="pagination">
+                <button id="btn-prev">Anterior</button>
+                <span id="page-info">Página 1</span>
+                <button id="btn-next">Siguiente</button>
+            </div>
+        </section>
+
+        <section id="detail" class="hidden">
+            <h2>Detalle</h2>
+            <div id="detail-content"></div>
+            <h3>Notas</h3>
+            <textarea id="note-input" rows="4" placeholder="Añade una nota..."></textarea>
+            <button id="btn-save-note">Guardar nota</button>
+        </section>
+    </main>
+
+    <footer>
+        <p>Alexandria MVP · Procesamiento 100% local</p>
+    </footer>
+
+    <script src="/app.js"></script>
+</body>
+</html>
