@@ -1,6 +1,7 @@
 use crate::db::Database;
 use crate::error::{AlexandriaError, Result};
-use crate::models::{FileEntry, ReorgOperation, ReorgPlanRequest};
+use crate::models::{FileEntry, ReorgOperation, ReorgPlanRequest, SpaceEstimate};
+use crate::reorganizer::space::estimate_space;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -14,8 +15,12 @@ pub async fn preview(db: &Database, request: &ReorgPlanRequest) -> Result<Vec<Re
     build_operations(db, request, 0).await
 }
 
-/// Build and persist a reorganization plan, returning the generated job id.
-pub async fn plan(db: &Database, request: &ReorgPlanRequest) -> Result<i64> {
+/// Build and persist a reorganization plan, returning the generated job id and space estimate.
+pub async fn plan(db: &Database, request: &ReorgPlanRequest) -> Result<(i64, SpaceEstimate)> {
+    let target_root = PathBuf::from(&request.target_root);
+    let operations = build_operations(db, request, 0).await?;
+    let estimate = estimate_space(&operations, &target_root)?;
+
     let filter = request.filter.clone().unwrap_or_default();
     let filter_json = serde_json::to_string(&filter).ok();
 
@@ -26,10 +31,20 @@ pub async fn plan(db: &Database, request: &ReorgPlanRequest) -> Result<i64> {
             filter_json.as_deref(),
             Some(&request.target_root),
             request.allow_cross_volume.unwrap_or(false),
+            Some(i64::try_from(estimate.target_free_bytes).unwrap_or(i64::MAX)),
+            Some(i64::try_from(estimate.target_total_bytes).unwrap_or(i64::MAX)),
+            i64::try_from(estimate.extra_bytes_required).unwrap_or(i64::MAX),
+            serde_json::to_string(&estimate.source_volumes)
+                .ok()
+                .as_deref(),
+            Some(&estimate.advice),
         )
         .await?;
 
-    let operations = build_operations(db, request, job_id).await?;
+    let mut operations = operations;
+    for op in &mut operations {
+        op.job_id = job_id;
+    }
     db.add_reorg_operations(job_id, &operations).await?;
 
     db.update_reorg_job_counters_and_status(
@@ -42,7 +57,7 @@ pub async fn plan(db: &Database, request: &ReorgPlanRequest) -> Result<i64> {
     )
     .await?;
 
-    Ok(job_id)
+    Ok((job_id, estimate))
 }
 
 async fn build_operations(
@@ -222,9 +237,21 @@ fn dest_str_to_path(dest: &str) -> PathBuf {
     PathBuf::from(dest.replace('/', "\\"))
 }
 
+fn strip_verbatim_prefix(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{}", rest)
+    } else if let Some(rest) = path.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else {
+        path.to_string()
+    }
+}
+
 fn same_volume_prefix(a: &str, b: &str) -> bool {
-    let a_path = Path::new(a);
-    let b_path = Path::new(b);
+    let a_norm = strip_verbatim_prefix(a);
+    let b_norm = strip_verbatim_prefix(b);
+    let a_path = Path::new(&a_norm);
+    let b_path = Path::new(&b_norm);
 
     let a_prefix = a_path.components().next();
     let b_prefix = b_path.components().next();
@@ -264,8 +291,13 @@ fn validate_safe_destination(dest: &Path, target_root: &Path) -> Result<()> {
     }
 
     // Reject paths that resolve to an absolute path outside the target root.
-    let target_str = target_root.to_string_lossy().to_lowercase();
-    if !dest_str.starts_with(&target_str) {
+    // Normalize separators so forward-slash and backslash roots compare equal.
+    let target_str = target_root
+        .to_string_lossy()
+        .to_lowercase()
+        .replace('/', "\\");
+    let dest_norm = dest_str.replace('/', "\\");
+    if !dest_norm.starts_with(&target_str) {
         return Err(AlexandriaError::BadRequest(
             "Destination escapes the target root".to_string(),
         ));

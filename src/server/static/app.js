@@ -562,6 +562,7 @@ let currentReorgJobId = null;
 async function loadReorganizeTab() {
     await loadReorgStrategies();
     await loadReorgFilterOptions();
+    await loadSystemStorage();
 }
 
 async function loadReorgStrategies() {
@@ -640,6 +641,7 @@ async function createReorgPlan() {
     currentReorgJobId = null;
     document.getElementById('btn-reorg-apply').disabled = true;
     document.getElementById('btn-reorg-rollback').disabled = true;
+    document.getElementById('reorg-space-estimate').classList.add('hidden');
 
     const request = {
         strategy: document.getElementById('reorg-strategy').value,
@@ -662,13 +664,73 @@ async function createReorgPlan() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Plan failed');
         currentReorgJobId = data.job_id;
-        document.getElementById('btn-reorg-apply').disabled = false;
+        renderSpaceEstimate(data.estimate);
         await loadReorgJobDetail(currentReorgJobId);
         document.getElementById('reorg-status').textContent = `Plan generado: job #${currentReorgJobId}`;
     } catch (err) {
         console.error('Error creating reorg plan:', err);
         alert('Error al generar el plan: ' + err.message);
     }
+}
+
+async function loadSystemStorage() {
+    try {
+        const res = await fetch('/api/system/storage');
+        const payload = await res.json();
+        renderSystemStorage(payload.data || []);
+    } catch (err) {
+        console.error('Error loading system storage:', err);
+    }
+}
+
+function renderSystemStorage(disks) {
+    const tbody = document.querySelector('#system-storage-table tbody');
+    tbody.innerHTML = '';
+    if (!disks.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="muted">No se detectaron discos.</td></tr>';
+        return;
+    }
+    for (const d of disks) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${escapeHtml(d.name)}</td>
+            <td>${escapeHtml(d.mount_point)}</td>
+            <td>${formatBytes(d.total_bytes)}</td>
+            <td>${formatBytes(d.free_bytes)}</td>
+            <td>${formatBytes(d.used_bytes)}</td>
+        `;
+        tbody.appendChild(tr);
+    }
+}
+
+function renderSpaceEstimate(estimate) {
+    const container = document.getElementById('reorg-space-estimate');
+    if (!estimate) {
+        container.classList.add('hidden');
+        return;
+    }
+    container.classList.remove('hidden');
+    document.getElementById('reorg-total-bytes').textContent = formatBytes(estimate.total_source_bytes ?? 0);
+    document.getElementById('reorg-extra-bytes').textContent = formatBytes(estimate.extra_bytes_required ?? 0);
+    document.getElementById('reorg-target-total').textContent = formatBytes(estimate.target_total_bytes ?? 0);
+    document.getElementById('reorg-target-free').textContent = formatBytes(estimate.target_free_bytes ?? 0);
+    const used = (estimate.target_total_bytes ?? 0) - (estimate.target_free_bytes ?? 0);
+    document.getElementById('reorg-target-used').textContent = formatBytes(used);
+    document.getElementById('reorg-advice').textContent = estimate.advice || '-';
+    const warningsUl = document.getElementById('reorg-warnings');
+    warningsUl.innerHTML = '';
+    const warnings = estimate.warnings || [];
+    if (warnings.length === 0) {
+        warningsUl.innerHTML = '<li class="muted">Sin advertencias.</li>';
+    } else {
+        for (const w of warnings) {
+            const li = document.createElement('li');
+            li.textContent = w;
+            warningsUl.appendChild(li);
+        }
+    }
+    const insufficient = (estimate.target_free_bytes ?? 0) < (estimate.extra_bytes_required ?? 0);
+    document.getElementById('btn-reorg-apply').disabled = insufficient;
 }
 
 async function loadReorgJobDetail(jobId) {

@@ -628,16 +628,27 @@ impl Database {
         filter_json: Option<&str>,
         target_root: Option<&str>,
         allow_cross_volume: bool,
+        target_free_bytes: Option<i64>,
+        target_total_bytes: Option<i64>,
+        estimated_extra_bytes: i64,
+        source_volumes_json: Option<&str>,
+        storage_advice: Option<&str>,
     ) -> Result<i64> {
         let id: i64 = sqlx::query_scalar(
-            "INSERT INTO reorg_jobs (strategy, template, filter_json, target_root, allow_cross_volume) \
-             VALUES (?, ?, ?, ?, ?) RETURNING id",
+            "INSERT INTO reorg_jobs (strategy, template, filter_json, target_root, allow_cross_volume, \
+             target_free_bytes, target_total_bytes, estimated_extra_bytes, source_volumes_json, storage_advice) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
         )
         .bind(strategy)
         .bind(template)
         .bind(filter_json)
         .bind(target_root)
         .bind(if allow_cross_volume { 1 } else { 0 })
+        .bind(target_free_bytes)
+        .bind(target_total_bytes)
+        .bind(estimated_extra_bytes)
+        .bind(source_volumes_json)
+        .bind(storage_advice)
         .fetch_one(&self.pool)
         .await?;
         Ok(id)
@@ -675,7 +686,9 @@ impl Database {
         let row = sqlx::query_as::<_, ReorgJob>(
             "SELECT id, strategy, template, filter_json, target_root, status, created_at, \
              started_at, finished_at, total_operations, completed_operations, failed_operations, \
-             rolled_back_operations, backup_db_path, allow_cross_volume FROM reorg_jobs WHERE id = ?",
+             rolled_back_operations, backup_db_path, allow_cross_volume, target_free_bytes, \
+             target_total_bytes, estimated_extra_bytes, source_volumes_json, storage_advice \
+             FROM reorg_jobs WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -688,8 +701,9 @@ impl Database {
         let rows = sqlx::query_as::<_, ReorgJob>(
             "SELECT id, strategy, template, filter_json, target_root, status, created_at, \
              started_at, finished_at, total_operations, completed_operations, failed_operations, \
-             rolled_back_operations, backup_db_path, allow_cross_volume FROM reorg_jobs \
-             ORDER BY created_at DESC LIMIT ?",
+             rolled_back_operations, backup_db_path, allow_cross_volume, target_free_bytes, \
+             target_total_bytes, estimated_extra_bytes, source_volumes_json, storage_advice \
+             FROM reorg_jobs ORDER BY created_at DESC LIMIT ?",
         )
         .bind(limit)
         .fetch_all(&self.pool)

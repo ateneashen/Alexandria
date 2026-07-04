@@ -1,6 +1,8 @@
 use crate::db::Database;
 use crate::error::{AlexandriaError, Result};
 use crate::models::ReorgOperation;
+use crate::reorganizer::space::format_bytes;
+use crate::system::storage::free_space_for_path;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -19,6 +21,26 @@ pub async fn apply(db: Database, job_id: i64, data_dir: &Path) -> Result<()> {
             "Job {} is not in planned state (current: {})",
             job_id, job.status
         )));
+    }
+
+    let target_root = job
+        .target_root
+        .as_ref()
+        .ok_or_else(|| AlexandriaError::BadRequest("Reorg job has no target root".to_string()))?;
+    let target_path = Path::new(target_root);
+
+    if job.estimated_extra_bytes > 0 {
+        let current_free = free_space_for_path(target_path)?;
+        let required = job.estimated_extra_bytes as u64;
+        if current_free < required {
+            return Err(AlexandriaError::BadRequest(format!(
+                "Espacio insuficiente en destino. Se necesitan {} pero solo hay {} libres. \
+                 Libera {} o elige otro destino.",
+                format_bytes(required),
+                format_bytes(current_free),
+                format_bytes(required.saturating_sub(current_free))
+            )));
+        }
     }
 
     let backup_path = backup_database(data_dir)?;

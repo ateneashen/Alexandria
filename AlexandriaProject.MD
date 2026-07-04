@@ -135,6 +135,8 @@ AlexandriaProject/
 - [x] CLI `reorg plan/list/status/apply/rollback`.
 - [x] API REST `/api/reorganize/*`.
 - [x] Pestaña "Reorganizar" en el frontend.
+- [x] Estimación de espacio en disco, consejos y advertencias antes de aplicar.
+- [x] Endpoint `/api/system/storage` para información de discos.
 - [x] Beta funcional en `Z:\AlexandriaProjectBeta`.
 
 ### Fase 6: Extensibilidad y Refinamiento

@@ -407,7 +407,7 @@ async fn test_reorg_plan_apply_and_rollback() {
         allow_cross_volume: Some(false),
     };
 
-    let job_id = alexandria::reorganizer::plan(&db, &request).await.unwrap();
+    let (job_id, _estimate) = alexandria::reorganizer::plan(&db, &request).await.unwrap();
     let operations = db.get_reorg_operations(job_id).await.unwrap();
     assert_eq!(operations.len(), 2);
     assert!(operations.iter().all(|o| o.status == "pending"));
@@ -468,9 +468,86 @@ async fn test_reorg_collision_detection() {
         allow_cross_volume: Some(false),
     };
 
-    let job_id = alexandria::reorganizer::plan(&db, &request).await.unwrap();
+    let (job_id, _estimate) = alexandria::reorganizer::plan(&db, &request).await.unwrap();
     let operations = db.get_reorg_operations(job_id).await.unwrap();
     assert_eq!(operations.len(), 2);
     assert!(operations.iter().all(|o| o.status == "failed"));
     assert!(operations.iter().all(|o| o.action == "skip_collision"));
+}
+
+#[tokio::test]
+async fn test_system_storage_endpoint() {
+    let (db, _path) = setup_test_db().await;
+    let state = Arc::new(AppState {
+        db,
+        data_dir: std::path::PathBuf::from("C:/ai/alexandria-test"),
+    });
+    let app = api_routes(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/system/storage")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(payload.get("data").unwrap().is_array());
+}
+
+#[tokio::test]
+async fn test_reorg_plan_returns_estimate() {
+    let (db, _db_path) = setup_test_db().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let source_dir = tmp.path().join("source");
+    std::fs::create_dir_all(&source_dir).unwrap();
+
+    insert_real_file(&db, &source_dir, "video_a.mp4", "video").await;
+    insert_real_file(&db, &source_dir, "video_b.mp4", "video").await;
+
+    let target_root = tmp.path().join("target");
+
+    let state = Arc::new(AppState {
+        db,
+        data_dir: tmp.path().to_path_buf(),
+    });
+    let app = api_routes(state);
+
+    let request_body = serde_json::json!({
+        "strategy": "by-type",
+        "template": "{file_type}/{name}.{ext}",
+        "target_root": target_root.to_string_lossy(),
+        "allow_cross_volume": true,
+        "filter": null
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/reorganize/plan")
+                .method("POST")
+                .header("content-type", "application/json")
+                .body(Body::from(request_body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert!(payload.get("job_id").unwrap().is_number());
+    let estimate = payload.get("estimate").unwrap();
+    assert!(estimate.get("total_source_bytes").unwrap().is_number());
+    assert!(estimate.get("advice").unwrap().as_str().unwrap().len() > 0);
 }

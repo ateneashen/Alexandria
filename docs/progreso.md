@@ -1,9 +1,9 @@
 # Progreso de Alexandria
 
 ## Estado actual
-**Versión:** 0.4.0 (Fase de Reorganización completada)  
+**Versión:** 0.4.1 (Reorganización con estimación de espacio)  
 **Fecha:** 2026-07-04  
-**Estado:** Reorganización física de archivos implementada con énfasis en seguridad; beta copiada a `Z:\AlexandriaProjectBeta`
+**Estado:** Estimación de espacio integrada en planificación, CLI, API y frontend; beta copiada a `Z:\AlexandriaProjectBeta`
 
 ## Completado
 - [x] Estructura base del proyecto Cargo.
@@ -47,7 +47,17 @@
   - [x] API REST `/api/reorganize/*`.
   - [x] Pestaña "Reorganizar" en el frontend.
   - [x] Tests de reorganización (plan, apply, rollback, colisión).
-- [x] Beta funcional copiada a `Z:\AlexandriaProjectBeta` con `README-BETA.md`.
+- [x] **Mejora v0.4.1 — Estimación de espacio en reorganización**:
+  - [x] Dependencias `fs2` y `sysinfo` para consultar discos y espacio libre.
+  - [x] Migración SQL `5_add_storage_estimate.sql` con campos de espacio en `reorg_jobs`.
+  - [x] Módulo `src/system/storage.rs`: listado de discos, mapeo path → disco y espacio libre.
+  - [x] Módulo `src/reorganizer/space.rs`: cálculo de espacio extra requerido, consejos y advertencias.
+  - [x] Planner persiste la estimación en el job y `apply` re-verifica espacio antes de ejecutar.
+  - [x] CLI `reorg plan` muestra estimación; `reorg apply` aborta si falta espacio.
+  - [x] Endpoint `/api/system/storage` y respuesta con `estimate` en `/api/reorganize/plan` y `/api/reorganize/jobs/:id`.
+  - [x] Frontend: tabla de discos, panel de estimación y desactivación del botón Aplicar si falta espacio.
+  - [x] Tests unitarios para `estimate_space` y tests de integración para los nuevos endpoints.
+- [x] Beta funcional copiada a `Z:\AlexandriaProjectBeta` con `README-BETA.md` actualizado.
 - [x] Tests unitarios e integración pasando.
 - [x] Validación E2E: scan, info, groups, serve, API, frontend y reorg.
 - [x] README, .gitignore, LICENSE, run.bat y docs.
@@ -58,7 +68,7 @@
 - [ ] Empaquetado/distribución (instalador o release automático).
 
 ## Métricas
-- Líneas de código fuente: ~4.800 (aproximado).
-- Tests: 22 (10 unitarios + 12 integración).
-- Build release: ~2m 10s en este entorno.
+- Líneas de código fuente: ~5.200 (aproximado).
+- Tests: 30 (16 unitarios + 14 integración).
+- Build release: ~2m 50s en este entorno.
 - Tamaño binario release: ~9.5 MB.

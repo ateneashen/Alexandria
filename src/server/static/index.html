@@ -159,6 +159,31 @@
             <div class="warning-box">
                 <strong>⚠️ Advertencia:</strong> esta operación mueve archivos físicamente. Se recomienda hacer una copia de seguridad externa antes de aplicar un plan.
             </div>
+
+            <h3>Discos del sistema</h3>
+            <div class="table-wrap">
+                <table id="system-storage-table">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Punto de montaje</th>
+                            <th>Total</th>
+                            <th>Libre</th>
+                            <th>Usado</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <h3>Estimación de espacio</h3>
+            <div id="reorg-space-estimate" class="hidden">
+                <p>Total seleccionado: <strong id="reorg-total-bytes">-</strong></p>
+                <p>Espacio adicional requerido: <strong id="reorg-extra-bytes">-</strong></p>
+                <p>Disco destino — Total: <strong id="reorg-target-total">-</strong>, Libre: <strong id="reorg-target-free">-</strong>, Usado: <strong id="reorg-target-used">-</strong></p>
+                <p>Consejo: <span id="reorg-advice">-</span></p>
+                <ul id="reorg-warnings"></ul>
+            </div>
             <div class="filters">
                 <label>Estrategia
                     <select id="reorg-strategy">

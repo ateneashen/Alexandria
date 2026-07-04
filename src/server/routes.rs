@@ -1,8 +1,11 @@
 use crate::db::Database;
 use crate::error::{AlexandriaError, Result};
 use crate::models::{
-    FileFilter, NoteRequest, ReorgPlanRequest, ReorgStrategy, ScanJob, Stats, Tag, TagRequest,
+    DiskInfo, FileFilter, NoteRequest, ReorgPlanRequest, ReorgStrategy, ScanJob, SpaceEstimate,
+    Stats, Tag, TagRequest,
 };
+use crate::reorganizer::space;
+use crate::system::storage::list_disks;
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::{
     extract::{Path as AxumPath, Query, State},
@@ -38,6 +41,7 @@ pub fn api_routes(state: Arc<AppState>) -> Router {
         .route("/api/groups/:id/files", get(list_group_files))
         .route("/api/stats", get(get_stats))
         .route("/api/stats/by-type", get(get_stats_by_type))
+        .route("/api/system/storage", get(system_storage))
         .route("/api/reorganize/strategies", get(list_reorg_strategies))
         .route("/api/reorganize/plan", post(create_reorg_plan))
         .route("/api/reorganize/jobs", get(list_reorg_jobs))
@@ -257,8 +261,8 @@ async fn create_reorg_plan(
     State(state): State<Arc<AppState>>,
     Json(request): Json<ReorgPlanRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    let job_id = crate::reorganizer::plan(&state.db, &request).await?;
-    Ok(Json(json!({ "job_id": job_id })))
+    let (job_id, estimate) = crate::reorganizer::plan(&state.db, &request).await?;
+    Ok(Json(json!({ "job_id": job_id, "estimate": estimate })))
 }
 
 async fn list_reorg_jobs(State(state): State<Arc<AppState>>) -> Result<Json<serde_json::Value>> {
@@ -271,8 +275,10 @@ async fn get_reorg_job_detail(
     AxumPath(id): AxumPath<i64>,
 ) -> Result<Json<serde_json::Value>> {
     let (job, operations) = crate::reorganizer::get_job(&state.db, id).await?;
+    let estimate = build_estimate_from_job(&job, &operations);
     Ok(Json(json!({
         "data": job,
+        "estimate": estimate,
         "operations": operations,
     })))
 }
@@ -307,6 +313,61 @@ async fn rollback_reorg_job(
         "status": job.status,
         "operations": operations,
     })))
+}
+
+async fn system_storage() -> Result<Json<serde_json::Value>> {
+    let disks: Vec<DiskInfo> = list_disks();
+    Ok(Json(json!({ "data": disks })))
+}
+
+fn build_estimate_from_job(
+    job: &crate::models::ReorgJob,
+    operations: &[crate::models::ReorgOperation],
+) -> SpaceEstimate {
+    let total_source_bytes = operations
+        .iter()
+        .map(|op| op.size_bytes.max(0) as u64)
+        .sum();
+    let extra_bytes_required = job.estimated_extra_bytes.max(0) as u64;
+    let target_free_bytes = job.target_free_bytes.unwrap_or(0).max(0) as u64;
+    let target_total_bytes = job.target_total_bytes.unwrap_or(0).max(0) as u64;
+
+    let mut warnings = Vec::new();
+    if target_free_bytes < extra_bytes_required {
+        warnings.push(format!(
+            "Espacio insuficiente en destino: faltan {}.",
+            space::format_bytes(extra_bytes_required.saturating_sub(target_free_bytes))
+        ));
+    }
+
+    let large_files: Vec<u64> = operations
+        .iter()
+        .map(|op| op.size_bytes.max(0) as u64)
+        .filter(|s| *s > 1024 * 1024 * 1024)
+        .collect();
+    if !large_files.is_empty() {
+        warnings.push(format!(
+            "{} archivo(s) superan 1 GB ({} en total).",
+            large_files.len(),
+            space::format_bytes(large_files.iter().sum())
+        ));
+    }
+
+    let source_volumes: Vec<String> = job
+        .source_volumes_json
+        .as_deref()
+        .and_then(|json| serde_json::from_str(json).ok())
+        .unwrap_or_default();
+
+    SpaceEstimate {
+        total_source_bytes,
+        extra_bytes_required,
+        target_free_bytes,
+        target_total_bytes,
+        advice: job.storage_advice.clone().unwrap_or_default(),
+        warnings,
+        source_volumes,
+    }
 }
 
 async fn health() -> Json<serde_json::Value> {

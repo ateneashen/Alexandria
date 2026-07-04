@@ -10,7 +10,7 @@ Indexador local de activos digitales escrito en Rust. Escanea directorios, extra
 - **Documentos y archivos comprimidos**: extracción de páginas e información de PDFs (`lopdf`) y listado de contenido de archivos ZIP.
 - **Agrupación inteligente**: detecta automáticamente series, películas (incluyendo versiones/remakes) y colecciones por prefijo.
 - **Notas y etiquetas**: añade notas históricas y tags a cualquier archivo; gestión desde CLI y web.
-- **Reorganización física de archivos (beta)**: mueve/renombra archivos según plantillas basadas en metadatos, grupos, fecha o tags; con dry-run, backup de BD, verificación de checksums y rollback.
+- **Reorganización física de archivos (beta)**: mueve/renombra archivos según plantillas basadas en metadatos, grupos, fecha o tags; con dry-run, backup de BD, verificación de checksums, rollback y **estimación de espacio en disco**.
 - **Base de datos SQLite embebida**: sin instalación externa.
 - **Interfaz web vanilla**: embebida en el binario, lista para usar.
 - **Single binary**: copia y ejecuta desde cualquier carpeta.
@@ -135,6 +135,12 @@ alexandria reorg rollback --job-id 1
 
 Estrategias disponibles: `by-type`, `by-group`, `by-date`, `by-tag`. Tokens de plantilla: `{file_type}`, `{extension}`, `{name}`, `{ext}`, `{group_name}`, `{group_kind}`, `{year}`, `{month}`, `{day}`, `{tag}`.
 
+Antes de aplicar, Alexandria muestra:
+- Capacidad total, espacio libre y usado del disco de destino.
+- Tamaño total de archivos seleccionados.
+- Espacio adicional requerido (0 si todos los movimientos son atómicos en el mismo volumen).
+- Consejo del sistema y advertencias si hay poco espacio o archivos grandes.
+
 ## Agrupación inteligente
 
 Alexandria clasifica automáticamente los archivos en grupos:
@@ -164,6 +170,7 @@ Las películas con el mismo título y año pero diferentes versiones (Director's
 - `GET /api/file-types` — tipos de archivo indexados.
 - `GET /api/extensions` — extensiones indexadas.
 - `GET /api/scan-jobs` — últimos trabajos de escaneo.
+- `GET /api/system/storage` — información de discos del sistema (capacidad, libre, usado).
 - `GET /api/reorganize/strategies` — estrategias y tokens de reorganización.
 - `POST /api/reorganize/plan` — generar plan de reorganización.
 - `GET /api/reorganize/jobs` — listar trabajos de reorganización.

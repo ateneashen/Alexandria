@@ -141,6 +141,31 @@ pub struct ReorgJob {
     pub rolled_back_operations: i64,
     pub backup_db_path: Option<String>,
     pub allow_cross_volume: bool,
+    pub target_free_bytes: Option<i64>,
+    pub target_total_bytes: Option<i64>,
+    pub estimated_extra_bytes: i64,
+    pub source_volumes_json: Option<String>,
+    pub storage_advice: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiskInfo {
+    pub name: String,
+    pub mount_point: String,
+    pub total_bytes: u64,
+    pub free_bytes: u64,
+    pub used_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpaceEstimate {
+    pub total_source_bytes: u64,
+    pub extra_bytes_required: u64,
+    pub target_free_bytes: u64,
+    pub target_total_bytes: u64,
+    pub advice: String,
+    pub warnings: Vec<String>,
+    pub source_volumes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]

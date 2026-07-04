@@ -3,6 +3,7 @@ use alexandria::config::AppConfig;
 use alexandria::db::Database;
 use alexandria::groups::match_name;
 use alexandria::models::{FileFilter, ReorgPlanRequest, ReorgStrategy};
+use alexandria::reorganizer::space;
 use alexandria::scanner::scan_directory;
 use alexandria::server::serve;
 use clap::Parser;
@@ -203,13 +204,16 @@ async fn handle_reorg_command(
                 allow_cross_volume: Some(allow_cross_volume),
             };
 
+            let target_root_path = std::path::Path::new(&request.target_root);
             if dry_run {
                 let operations = alexandria::reorganizer::preview(&db, &request).await?;
+                let estimate = space::estimate_space(&operations, target_root_path)?;
                 println!("=== Simulación de reorganización ===");
                 println!("Estrategia: {:?}", request.strategy);
                 println!("Plantilla: {}", request.template);
                 println!("Destino: {}", request.target_root);
                 println!("Operaciones propuestas: {}", operations.len());
+                print_space_estimate(&estimate);
                 for op in operations {
                     println!(
                         "[{}] {} -> {} ({})",
@@ -220,11 +224,10 @@ async fn handle_reorg_command(
                 return Ok(());
             }
 
-            let job_id = alexandria::reorganizer::plan(&db, &request).await?;
-            println!(
-                "Plan de reorganización creado con job_id={}. Revisa el estado antes de aplicar.",
-                job_id
-            );
+            let (job_id, estimate) = alexandria::reorganizer::plan(&db, &request).await?;
+            println!("Plan de reorganización creado con job_id={}", job_id);
+            print_space_estimate(&estimate);
+            println!("Revisa el estado antes de aplicar.");
         }
         ReorgCommands::List => {
             let jobs = alexandria::reorganizer::list_jobs(&db, 50).await?;
@@ -256,6 +259,21 @@ async fn handle_reorg_command(
                 job.failed_operations,
                 job.rolled_back_operations
             );
+            println!(
+                "Espacio adicional requerido: {}",
+                space::format_bytes(job.estimated_extra_bytes.max(0) as u64)
+            );
+            if let (Some(total), Some(free)) = (job.target_total_bytes, job.target_free_bytes) {
+                println!(
+                    "Disco destino - Total: {}, Libre: {}, Usado: {}",
+                    space::format_bytes(total.max(0) as u64),
+                    space::format_bytes(free.max(0) as u64),
+                    space::format_bytes((total.max(0) as u64).saturating_sub(free.max(0) as u64))
+                );
+            }
+            if let Some(advice) = &job.storage_advice {
+                println!("Consejo: {}", advice);
+            }
             for op in operations {
                 println!(
                     "[{}] {} -> {} ({})",
@@ -330,6 +348,35 @@ async fn handle_reorg_command(
         }
     }
     Ok(())
+}
+
+fn print_space_estimate(estimate: &alexandria::models::SpaceEstimate) {
+    println!("=== Estimación de espacio ===");
+    println!(
+        "Tamaño total de archivos seleccionados: {}",
+        space::format_bytes(estimate.total_source_bytes)
+    );
+    println!(
+        "Espacio adicional requerido: {}",
+        space::format_bytes(estimate.extra_bytes_required)
+    );
+    println!(
+        "Disco destino - Total: {}, Libre: {}, Usado: {}",
+        space::format_bytes(estimate.target_total_bytes),
+        space::format_bytes(estimate.target_free_bytes),
+        space::format_bytes(
+            estimate
+                .target_total_bytes
+                .saturating_sub(estimate.target_free_bytes)
+        )
+    );
+    println!("Consejo: {}", estimate.advice);
+    if !estimate.warnings.is_empty() {
+        println!("Advertencias:");
+        for w in &estimate.warnings {
+            println!("  - {}", w);
+        }
+    }
 }
 
 fn init_logging(config: &AppConfig) -> anyhow::Result<WorkerGuard> {

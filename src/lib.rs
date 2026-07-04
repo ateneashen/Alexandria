@@ -8,3 +8,4 @@ pub mod models;
 pub mod reorganizer;
 pub mod scanner;
 pub mod server;
+pub mod system;

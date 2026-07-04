@@ -95,3 +95,11 @@
   - B: Requerir flag explícita `--allow-cross-volume`.
 - **Decision:** B.
 - **Justificación:** Por defecto se usan renombrados atómicos (mismo volumen), más seguros e instantáneos. El usuario debe optar conscientemente por operaciones entre discos.
+
+## [2026-07-04] Estimación de espacio en reorganización
+- **Contexto:** La reorganización física puede requerir espacio adicional cuando los archivos se copian entre volúmenes; queremos advertir al usuario antes de ejecutar.
+- **Opciones:**
+  - A: Calcular el espacio solo en el frontend con la API del sistema operativo vía JavaScript (imposible en navegador sin permisos elevados).
+  - B: Calcular la estimación en el backend con `sysinfo` + `fs2`, persistirla en `reorg_jobs` y mostrarla en CLI/API/frontend.
+- **Decision:** B.
+- **Justificación:** El backend tiene acceso confiable a los discos del sistema; al persistir la estimación junto al job se puede re-verificar en `apply`, se conserva el contexto histórico y el frontend solo consume datos. `sysinfo` lista volúmenes y `fs2` devuelve espacio libre de un path concreto, cubriendo el mapeo path → disco.

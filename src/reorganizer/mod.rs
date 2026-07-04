@@ -2,19 +2,24 @@ pub mod checksum;
 pub mod executor;
 pub mod planner;
 pub mod rollback;
+pub mod space;
 pub mod templates;
 
 pub use executor::apply;
 pub use planner::{plan, preview};
 pub use rollback::rollback;
+pub use space::estimate_space;
 
 use crate::db::Database;
 use crate::error::Result;
-use crate::models::{ReorgJob, ReorgOperation, ReorgPlanRequest};
+use crate::models::{ReorgJob, ReorgOperation, ReorgPlanRequest, SpaceEstimate};
 use std::path::Path;
 
 /// Generate a reorganization plan and persist it.
-pub async fn create_plan(db: &Database, request: &ReorgPlanRequest) -> Result<i64> {
+pub async fn create_plan(
+    db: &Database,
+    request: &ReorgPlanRequest,
+) -> Result<(i64, SpaceEstimate)> {
     planner::plan(db, request).await
 }
 
