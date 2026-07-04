@@ -10,6 +10,7 @@ Indexador local de activos digitales escrito en Rust. Escanea directorios, extra
 - **Documentos y archivos comprimidos**: extracción de páginas e información de PDFs (`lopdf`) y listado de contenido de archivos ZIP.
 - **Agrupación inteligente**: detecta automáticamente series, películas (incluyendo versiones/remakes) y colecciones por prefijo.
 - **Notas y etiquetas**: añade notas históricas y tags a cualquier archivo; gestión desde CLI y web.
+- **Reorganización física de archivos (beta)**: mueve/renombra archivos según plantillas basadas en metadatos, grupos, fecha o tags; con dry-run, backup de BD, verificación de checksums y rollback.
 - **Base de datos SQLite embebida**: sin instalación externa.
 - **Interfaz web vanilla**: embebida en el binario, lista para usar.
 - **Single binary**: copia y ejecuta desde cualquier carpeta.
@@ -106,6 +107,34 @@ alexandria tag "C:/Users/Admin/Videos/movie.mp4" --add favoritos --add pendiente
 alexandria tag "C:/Users/Admin/Videos/movie.mp4" --remove pendiente
 ```
 
+### Reorganizar archivos físicamente
+
+> ⚠️ Función de riesgo. Siempre prueba con `--dry-run` y ten un backup externo antes de usar `apply`.
+
+Generar un plan de reorganización:
+
+```bash
+alexandria reorg plan --strategy by-type \
+  --template "{file_type}/{name}.{ext}" \
+  --target-root "D:/Organizado" \
+  --file-type video \
+  --dry-run
+```
+
+Aplicar un plan (pide confirmación; usa `--yes` para saltarla):
+
+```bash
+alexandria reorg apply --job-id 1
+```
+
+Hacer rollback de un plan aplicado:
+
+```bash
+alexandria reorg rollback --job-id 1
+```
+
+Estrategias disponibles: `by-type`, `by-group`, `by-date`, `by-tag`. Tokens de plantilla: `{file_type}`, `{extension}`, `{name}`, `{ext}`, `{group_name}`, `{group_kind}`, `{year}`, `{month}`, `{day}`, `{tag}`.
+
 ## Agrupación inteligente
 
 Alexandria clasifica automáticamente los archivos en grupos:
@@ -135,6 +164,12 @@ Las películas con el mismo título y año pero diferentes versiones (Director's
 - `GET /api/file-types` — tipos de archivo indexados.
 - `GET /api/extensions` — extensiones indexadas.
 - `GET /api/scan-jobs` — últimos trabajos de escaneo.
+- `GET /api/reorganize/strategies` — estrategias y tokens de reorganización.
+- `POST /api/reorganize/plan` — generar plan de reorganización.
+- `GET /api/reorganize/jobs` — listar trabajos de reorganización.
+- `GET /api/reorganize/jobs/:id` — detalle de un trabajo.
+- `POST /api/reorganize/jobs/:id/apply` — aplicar plan.
+- `POST /api/reorganize/jobs/:id/rollback` — revertir plan.
 - `GET /api/groups` — listar grupos (`?kind=series`).
 - `GET /api/groups/:id` — detalle de un grupo.
 - `GET /api/groups/:id/files` — archivos de un grupo.
@@ -161,6 +196,7 @@ src/
   groups/          # Motor de agrupación por patrones
   scanner/         # Escaneo de directorios
   extractors/      # Extracción de metadatos
+  reorganizer/     # Planificación/ejecución de reorganización física
   server/          # API REST + frontend
 schemas/           # Migraciones SQL
 docs/              # Documentación de progreso
@@ -178,6 +214,7 @@ cargo test
 Ver [AlexandriaProject.MD](AlexandriaProject.MD) para la hoja de ruta completa.
 
 Próximas fases:
+- Validación a gran escala de la reorganización física (beta en curso en `Z:\AlexandriaProjectBeta`).
 - Soporte para más formatos de archivo (RAR, 7z, imágenes, etc.).
 - Pruebas de carga y estabilidad en discos grandes.
 

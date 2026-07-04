@@ -8,7 +8,10 @@ use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 
 pub async fn serve(config: &AppConfig, db: Database) -> anyhow::Result<()> {
-    let state = Arc::new(AppState { db });
+    let state = Arc::new(AppState {
+        db,
+        data_dir: config.data_dir.clone(),
+    });
 
     let app = Router::new()
         .merge(static_routes())

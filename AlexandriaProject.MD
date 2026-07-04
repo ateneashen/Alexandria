@@ -10,7 +10,8 @@ El objetivo final es convertirse en un gestor universal de activos digitales con
 2. **Base de datos indexada:** Almacenamiento eficiente de metadatos y contenido en SQLite.
 3. **Interfaz Web:** Visualización, filtrado avanzado y gestión mediante HTML/JS.
 4. **Inteligencia de agrupación:** Detección automática de patrones en nombres (series, versiones de películas).
-5. **Extensibilidad:** Arquitectura diseñada para soportar nuevos tipos de archivos sin refactorizar el núcleo.
+5. **Reorganización física segura:** Mover/renombrar archivos en disco según metadatos, grupos, fecha o tags; con dry-run, backup de BD, verificación de integridad y rollback.
+6. **Extensibilidad:** Arquitectura diseñada para soportar nuevos tipos de archivos y operaciones sin refactorizar el núcleo.
 
 ## 🎯 Objetivos Principales
 
@@ -125,9 +126,21 @@ AlexandriaProject/
 - [x] Interfaz HTML/JS para visualización, dashboard, grupos y filtrado avanzado.
 - [x] API REST para operaciones (notas, etiquetas, filtrar, ordenar).
 
+### Fase de Reorganización Física (v0.4.0)
+- [x] Diseño y planificación de seguridad (dry-run, backup, checksums, rollback).
+- [x] Tablas `reorg_jobs` y `reorg_operations`.
+- [x] Motor de plantillas con tokens (`{file_type}`, `{group_name}`, `{year}`, `{tag}`, etc.).
+- [x] Planificador con detección de colisiones y destinos peligrosos.
+- [x] Ejecutor con movimientos atómicos y copy+verify entre volúmenes.
+- [x] CLI `reorg plan/list/status/apply/rollback`.
+- [x] API REST `/api/reorganize/*`.
+- [x] Pestaña "Reorganizar" en el frontend.
+- [x] Beta funcional en `Z:\AlexandriaProjectBeta`.
+
 ### Fase 6: Extensibilidad y Refinamiento
 - [x] Sistema de módulos para otros formatos (PDF, ZIP, audio).
 - [x] Mejorar UI/UX (dashboard, pestañas, badges, responsividad).
+- [ ] Validar reorganización física a gran escala.
 - [ ] Pruebas de carga y estabilidad en discos grandes.
 - [ ] Soporte para más formatos (RAR, 7z, imágenes, modelos IA).
 

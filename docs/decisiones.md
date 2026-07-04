@@ -73,3 +73,25 @@
   - B: Construir SQL dinámico con `match` para columnas/orden permitidos.
 - **Decision:** B.
 - **Justificación:** Eficiencia en grandes volúmenes; el `match` en Rust sobre valores fijos evita inyección SQL sin necesidad de ORM.
+
+## [2026-07-04] Reorganización física con dry-run + log + rollback
+- **Contexto:** Necesitamos mover/renombrar archivos físicamente según criterios del usuario.
+- **Opciones:**
+  - A: Ejecutar movimientos directamente sin registro previo.
+  - B: Generar un plan persistente (`reorg_jobs` + `reorg_operations`), permitir dry-run, aplicar paso a paso y poder revertir.
+- **Decision:** B.
+- **Justificación:** Minimiza el riesgo de pérdida de datos: se puede previsualizar, se registra cada operación, se hace backup de la BD, se verifican checksums en copias y se dispone de rollback. Además, `std::fs::rename` dentro del mismo volumen es atómico, lo que reduce la ventana de inconsistencia.
+
+## [2026-07-04] Blake3 para verificación de integridad
+- **Contexto:** Verificar que una copia entre volúmenes no se corrompió antes de borrar el original.
+- **Opciones:** SHA-256 vs Blake3.
+- **Decision:** Blake3.
+- **Justificación:** Blake3 es significativamente más rápido en un único hilo para grandes archivos y tiene una implementación Rust madura y sencilla.
+
+## [2026-07-04] Cross-volume como opt-in
+- **Contexto:** Los movimientos entre discos implican copia + borrado, con más riesgo y tiempo.
+- **Opciones:**
+  - A: Permitir cross-volume por defecto.
+  - B: Requerir flag explícita `--allow-cross-volume`.
+- **Decision:** B.
+- **Justificación:** Por defecto se usan renombrados atómicos (mismo volumen), más seguros e instantáneos. El usuario debe optar conscientemente por operaciones entre discos.

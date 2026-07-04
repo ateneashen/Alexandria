@@ -16,6 +16,7 @@
         <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
         <button class="tab-btn" data-tab="files">Archivos</button>
         <button class="tab-btn" data-tab="groups">Grupos</button>
+        <button class="tab-btn" data-tab="reorganize">Reorganizar</button>
     </nav>
 
     <main>
@@ -151,6 +152,71 @@
                     </table>
                 </div>
             </section>
+        </section>
+
+        <section id="tab-reorganize" class="tab-panel hidden">
+            <h2>Reorganizar archivos</h2>
+            <div class="warning-box">
+                <strong>⚠️ Advertencia:</strong> esta operación mueve archivos físicamente. Se recomienda hacer una copia de seguridad externa antes de aplicar un plan.
+            </div>
+            <div class="filters">
+                <label>Estrategia
+                    <select id="reorg-strategy">
+                        <option value="by-type">Por tipo</option>
+                        <option value="by-group">Por grupo</option>
+                        <option value="by-date">Por fecha</option>
+                        <option value="by-tag">Por etiqueta</option>
+                        <option value="custom">Personalizada</option>
+                    </select>
+                </label>
+                <label>Plantilla
+                    <input type="text" id="reorg-template" value="{file_type}/{name}.{ext}" style="min-width: 300px;">
+                </label>
+                <label>Destino (target_root)
+                    <input type="text" id="reorg-target-root" placeholder="D:/Organizado" style="min-width: 220px;">
+                </label>
+                <label class="inline-check">
+                    <input type="checkbox" id="reorg-cross-volume"> Permitir cross-volume
+                </label>
+            </div>
+            <div class="filters">
+                <label>Tipo
+                    <select id="reorg-filter-type">
+                        <option value="">Cualquiera</option>
+                    </select>
+                </label>
+                <label>Extensión
+                    <select id="reorg-filter-ext">
+                        <option value="">Cualquiera</option>
+                    </select>
+                </label>
+                <label>Etiqueta
+                    <select id="reorg-filter-tag">
+                        <option value="">Cualquiera</option>
+                    </select>
+                </label>
+            </div>
+            <div class="actions">
+                <button id="btn-reorg-plan">Generar plan</button>
+                <button id="btn-reorg-apply" disabled>Aplicar</button>
+                <button id="btn-reorg-rollback" disabled>Rollback</button>
+            </div>
+            <div id="reorg-status" class="results-count"></div>
+            <div id="reorg-preview" class="table-wrap hidden">
+                <table id="reorg-operations-table">
+                    <thead>
+                        <tr>
+                            <th>Estado</th>
+                            <th>Acción</th>
+                            <th>Origen</th>
+                            <th>Destino</th>
+                            <th>Tamaño</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
         </section>
 
         <section id="detail" class="hidden">

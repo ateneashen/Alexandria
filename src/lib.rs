@@ -5,5 +5,6 @@ pub mod error;
 pub mod extractors;
 pub mod groups;
 pub mod models;
+pub mod reorganizer;
 pub mod scanner;
 pub mod server;

@@ -1,19 +1,23 @@
 use crate::db::Database;
 use crate::error::{AlexandriaError, Result};
-use crate::models::{FileFilter, NoteRequest, ScanJob, Stats, Tag, TagRequest};
+use crate::models::{
+    FileFilter, NoteRequest, ReorgPlanRequest, ReorgStrategy, ScanJob, Stats, Tag, TagRequest,
+};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::{
     extract::{Path as AxumPath, Query, State},
     response::{Html, Json},
-    routing::{delete, get},
+    routing::{delete, get, post},
     Router,
 };
 use serde::Deserialize;
 use serde_json::json;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 pub struct AppState {
     pub db: Database,
+    pub data_dir: PathBuf,
 }
 
 pub fn api_routes(state: Arc<AppState>) -> Router {
@@ -34,6 +38,15 @@ pub fn api_routes(state: Arc<AppState>) -> Router {
         .route("/api/groups/:id/files", get(list_group_files))
         .route("/api/stats", get(get_stats))
         .route("/api/stats/by-type", get(get_stats_by_type))
+        .route("/api/reorganize/strategies", get(list_reorg_strategies))
+        .route("/api/reorganize/plan", post(create_reorg_plan))
+        .route("/api/reorganize/jobs", get(list_reorg_jobs))
+        .route("/api/reorganize/jobs/:id", get(get_reorg_job_detail))
+        .route("/api/reorganize/jobs/:id/apply", post(apply_reorg_job))
+        .route(
+            "/api/reorganize/jobs/:id/rollback",
+            post(rollback_reorg_job),
+        )
         .route("/api/health", get(health))
         .with_state(state)
 }
@@ -199,6 +212,100 @@ async fn get_stats_by_type(State(state): State<Arc<AppState>>) -> Result<Json<se
             "archive": map.get("archive").copied().unwrap_or(0),
             "unknown": map.get("unknown").copied().unwrap_or(0),
         }
+    })))
+}
+
+async fn list_reorg_strategies() -> Json<serde_json::Value> {
+    Json(json!({
+        "strategies": [
+            {
+                "id": "by-type",
+                "name": "Por tipo",
+                "template": ReorgStrategy::ByType.default_template(),
+            },
+            {
+                "id": "by-group",
+                "name": "Por grupo",
+                "template": ReorgStrategy::ByGroup.default_template(),
+            },
+            {
+                "id": "by-date",
+                "name": "Por fecha",
+                "template": ReorgStrategy::ByDate.default_template(),
+            },
+            {
+                "id": "by-tag",
+                "name": "Por etiqueta",
+                "template": ReorgStrategy::ByTag.default_template(),
+            },
+            {
+                "id": "custom",
+                "name": "Personalizada",
+                "template": ReorgStrategy::Custom.default_template(),
+            },
+        ],
+        "tokens": [
+            "{file_type}", "{extension}", "{name}", "{ext}",
+            "{group_name}", "{group_kind}",
+            "{year}", "{month}", "{day}",
+            "{tag}"
+        ]
+    }))
+}
+
+async fn create_reorg_plan(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<ReorgPlanRequest>,
+) -> Result<Json<serde_json::Value>> {
+    let job_id = crate::reorganizer::plan(&state.db, &request).await?;
+    Ok(Json(json!({ "job_id": job_id })))
+}
+
+async fn list_reorg_jobs(State(state): State<Arc<AppState>>) -> Result<Json<serde_json::Value>> {
+    let jobs = state.db.list_reorg_jobs(50).await?;
+    Ok(Json(json!({ "data": jobs })))
+}
+
+async fn get_reorg_job_detail(
+    State(state): State<Arc<AppState>>,
+    AxumPath(id): AxumPath<i64>,
+) -> Result<Json<serde_json::Value>> {
+    let (job, operations) = crate::reorganizer::get_job(&state.db, id).await?;
+    Ok(Json(json!({
+        "data": job,
+        "operations": operations,
+    })))
+}
+
+async fn apply_reorg_job(
+    State(state): State<Arc<AppState>>,
+    AxumPath(id): AxumPath<i64>,
+) -> Result<Json<serde_json::Value>> {
+    let job = state.db.get_reorg_job(id).await?;
+    if job.status != "planned" {
+        return Err(AlexandriaError::BadRequest(format!(
+            "Job {} is not in planned state",
+            id
+        )));
+    }
+
+    crate::reorganizer::execute_plan(state.db.clone(), id, &state.data_dir).await?;
+    let (job, operations) = crate::reorganizer::get_job(&state.db, id).await?;
+    Ok(Json(json!({
+        "status": job.status,
+        "operations": operations,
+    })))
+}
+
+async fn rollback_reorg_job(
+    State(state): State<Arc<AppState>>,
+    AxumPath(id): AxumPath<i64>,
+) -> Result<Json<serde_json::Value>> {
+    crate::reorganizer::rollback_plan(&state.db, id).await?;
+    let (job, operations) = crate::reorganizer::get_job(&state.db, id).await?;
+    Ok(Json(json!({
+        "status": job.status,
+        "operations": operations,
     })))
 }
 

@@ -55,6 +55,7 @@ function switchTab(tab) {
     if (tab === 'dashboard') loadDashboard();
     if (tab === 'files') loadFiles();
     if (tab === 'groups') loadGroups();
+    if (tab === 'reorganize') loadReorganizeTab();
 }
 
 async function loadDashboard() {
@@ -544,6 +545,195 @@ document.getElementById('tag-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') addTag();
 });
 
+// Reorganize tab
+document.getElementById('reorg-strategy').addEventListener('change', updateReorgTemplate);
+document.getElementById('btn-reorg-plan').addEventListener('click', createReorgPlan);
+document.getElementById('btn-reorg-apply').addEventListener('click', applyReorgPlan);
+document.getElementById('btn-reorg-rollback').addEventListener('click', rollbackReorgPlan);
+
 loadDashboard();
 loadGroups();
 loadFilterOptions();
+loadReorganizeTab();
+
+let reorgStrategies = [];
+let currentReorgJobId = null;
+
+async function loadReorganizeTab() {
+    await loadReorgStrategies();
+    await loadReorgFilterOptions();
+}
+
+async function loadReorgStrategies() {
+    try {
+        const res = await fetch('/api/reorganize/strategies');
+        const data = await res.json();
+        reorgStrategies = data.strategies || [];
+        updateReorgTemplate();
+    } catch (err) {
+        console.error('Error loading reorg strategies:', err);
+    }
+}
+
+function updateReorgTemplate() {
+    const strategy = document.getElementById('reorg-strategy').value;
+    const entry = reorgStrategies.find(s => s.id === strategy);
+    if (entry && entry.template) {
+        document.getElementById('reorg-template').value = entry.template;
+    }
+}
+
+async function loadReorgFilterOptions() {
+    try {
+        const res = await fetch('/api/file-types');
+        const payload = await res.json();
+        const select = document.getElementById('reorg-filter-type');
+        const current = select.value;
+        select.innerHTML = '<option value="">Cualquiera</option>';
+        for (const ft of payload.data || []) {
+            const opt = document.createElement('option');
+            opt.value = ft;
+            opt.textContent = ft;
+            select.appendChild(opt);
+        }
+        select.value = current;
+    } catch (err) {
+        console.error('Error loading reorg file types:', err);
+    }
+
+    try {
+        const res = await fetch('/api/extensions');
+        const payload = await res.json();
+        const select = document.getElementById('reorg-filter-ext');
+        const current = select.value;
+        select.innerHTML = '<option value="">Cualquiera</option>';
+        for (const ext of payload.data || []) {
+            const opt = document.createElement('option');
+            opt.value = ext;
+            opt.textContent = ext;
+            select.appendChild(opt);
+        }
+        select.value = current;
+    } catch (err) {
+        console.error('Error loading reorg extensions:', err);
+    }
+
+    try {
+        const res = await fetch('/api/tags');
+        const tags = await res.json();
+        const select = document.getElementById('reorg-filter-tag');
+        const current = select.value;
+        select.innerHTML = '<option value="">Cualquiera</option>';
+        for (const t of tags || []) {
+            const opt = document.createElement('option');
+            opt.value = t.id;
+            opt.textContent = t.name;
+            select.appendChild(opt);
+        }
+        select.value = current;
+    } catch (err) {
+        console.error('Error loading reorg tags:', err);
+    }
+}
+
+async function createReorgPlan() {
+    currentReorgJobId = null;
+    document.getElementById('btn-reorg-apply').disabled = true;
+    document.getElementById('btn-reorg-rollback').disabled = true;
+
+    const request = {
+        strategy: document.getElementById('reorg-strategy').value,
+        template: document.getElementById('reorg-template').value,
+        target_root: document.getElementById('reorg-target-root').value,
+        allow_cross_volume: document.getElementById('reorg-cross-volume').checked,
+        filter: {
+            file_type: document.getElementById('reorg-filter-type').value || null,
+            extension: document.getElementById('reorg-filter-ext').value || null,
+            tag_id: document.getElementById('reorg-filter-tag').value ? parseInt(document.getElementById('reorg-filter-tag').value) : null,
+        }
+    };
+
+    try {
+        const res = await fetch('/api/reorganize/plan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(request)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Plan failed');
+        currentReorgJobId = data.job_id;
+        document.getElementById('btn-reorg-apply').disabled = false;
+        await loadReorgJobDetail(currentReorgJobId);
+        document.getElementById('reorg-status').textContent = `Plan generado: job #${currentReorgJobId}`;
+    } catch (err) {
+        console.error('Error creating reorg plan:', err);
+        alert('Error al generar el plan: ' + err.message);
+    }
+}
+
+async function loadReorgJobDetail(jobId) {
+    try {
+        const res = await fetch(`/api/reorganize/jobs/${jobId}`);
+        const data = await res.json();
+        const operations = data.operations || [];
+        renderReorgOperations(operations);
+        if (data.data && (data.data.status === 'completed' || data.data.status === 'failed')) {
+            document.getElementById('btn-reorg-rollback').disabled = false;
+        }
+    } catch (err) {
+        console.error('Error loading reorg job detail:', err);
+    }
+}
+
+function renderReorgOperations(operations) {
+    const container = document.getElementById('reorg-preview');
+    const tbody = document.querySelector('#reorg-operations-table tbody');
+    tbody.innerHTML = '';
+    if (!operations.length) {
+        container.classList.add('hidden');
+        return;
+    }
+    container.classList.remove('hidden');
+    for (const op of operations) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><span class="badge status-${op.status}">${escapeHtml(op.status)}</span></td>
+            <td>${escapeHtml(op.action)}</td>
+            <td title="${escapeHtml(op.source_path)}">${escapeHtml(op.source_path)}</td>
+            <td title="${escapeHtml(op.dest_path)}">${escapeHtml(op.dest_path)}</td>
+            <td>${formatBytes(op.size_bytes)}</td>
+            <td>${escapeHtml(op.error_message || '')}</td>
+        `;
+        tbody.appendChild(tr);
+    }
+}
+
+async function applyReorgPlan() {
+    if (!currentReorgJobId) return;
+    if (!confirm('⚠️ Se van a mover archivos físicamente. ¿Has hecho una copia de seguridad? ¿Continuar?')) return;
+    try {
+        const res = await fetch(`/api/reorganize/jobs/${currentReorgJobId}/apply`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Apply failed');
+        await loadReorgJobDetail(currentReorgJobId);
+        document.getElementById('reorg-status').textContent = `Job #${currentReorgJobId} estado: ${data.status}`;
+    } catch (err) {
+        console.error('Error applying reorg plan:', err);
+        alert('Error al aplicar el plan: ' + err.message);
+    }
+}
+
+async function rollbackReorgPlan() {
+    if (!currentReorgJobId) return;
+    if (!confirm('¿Revertir el último job de reorganización?')) return;
+    try {
+        const res = await fetch(`/api/reorganize/jobs/${currentReorgJobId}/rollback`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Rollback failed');
+        await loadReorgJobDetail(currentReorgJobId);
+        document.getElementById('reorg-status').textContent = `Job #${currentReorgJobId} estado: ${data.status}`;
+    } catch (err) {
+        console.error('Error rolling back reorg plan:', err);
+        alert('Error al revertir el plan: ' + err.message);
+    }
+}

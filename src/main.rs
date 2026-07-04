@@ -1,10 +1,12 @@
-use alexandria::cli::{Cli, Commands};
+use alexandria::cli::{Cli, Commands, ReorgCommands};
 use alexandria::config::AppConfig;
 use alexandria::db::Database;
 use alexandria::groups::match_name;
+use alexandria::models::{FileFilter, ReorgPlanRequest, ReorgStrategy};
 use alexandria::scanner::scan_directory;
 use alexandria::server::serve;
 use clap::Parser;
+use std::io::{self, Write};
 use std::path::PathBuf;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
@@ -155,8 +157,178 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
+        Commands::Reorg { command } => {
+            handle_reorg_command(command, db, &config).await?;
+        }
     }
 
+    Ok(())
+}
+
+async fn handle_reorg_command(
+    command: ReorgCommands,
+    db: Database,
+    config: &AppConfig,
+) -> anyhow::Result<()> {
+    match command {
+        ReorgCommands::Plan {
+            strategy,
+            template,
+            target_root,
+            allow_cross_volume,
+            file_type,
+            extension,
+            tag_id,
+            dry_run,
+        } => {
+            let strategy: ReorgStrategy = strategy.parse().map_err(|e: String| {
+                anyhow::anyhow!(
+                    "Estrategia desconocida: {}. Usa by-type, by-group, by-date, by-tag o custom",
+                    e
+                )
+            })?;
+
+            let filter = FileFilter {
+                file_type,
+                extension,
+                tag_id,
+                ..Default::default()
+            };
+
+            let request = ReorgPlanRequest {
+                strategy,
+                template,
+                target_root: target_root.to_string_lossy().to_string(),
+                filter: Some(filter),
+                allow_cross_volume: Some(allow_cross_volume),
+            };
+
+            if dry_run {
+                let operations = alexandria::reorganizer::preview(&db, &request).await?;
+                println!("=== Simulación de reorganización ===");
+                println!("Estrategia: {:?}", request.strategy);
+                println!("Plantilla: {}", request.template);
+                println!("Destino: {}", request.target_root);
+                println!("Operaciones propuestas: {}", operations.len());
+                for op in operations {
+                    println!(
+                        "[{}] {} -> {} ({})",
+                        op.status, op.source_path, op.dest_path, op.action
+                    );
+                }
+                println!("No se ha creado ningún job (modo simulación).");
+                return Ok(());
+            }
+
+            let job_id = alexandria::reorganizer::plan(&db, &request).await?;
+            println!(
+                "Plan de reorganización creado con job_id={}. Revisa el estado antes de aplicar.",
+                job_id
+            );
+        }
+        ReorgCommands::List => {
+            let jobs = alexandria::reorganizer::list_jobs(&db, 50).await?;
+            println!("=== Jobs de reorganización ({}) ===", jobs.len());
+            for j in jobs {
+                println!(
+                    "[{}] id={} strategy={} total={} completed={} failed={} rolled_back={}",
+                    j.status,
+                    j.id,
+                    j.strategy,
+                    j.total_operations,
+                    j.completed_operations,
+                    j.failed_operations,
+                    j.rolled_back_operations
+                );
+            }
+        }
+        ReorgCommands::Status { job_id } => {
+            let (job, operations) = alexandria::reorganizer::get_job(&db, job_id).await?;
+            println!("=== Job {} ({}) ===", job.id, job.status);
+            println!("Estrategia: {}", job.strategy);
+            println!("Plantilla: {}", job.template.unwrap_or_default());
+            println!("Destino: {}", job.target_root.unwrap_or_default());
+            println!("Backup BD: {}", job.backup_db_path.unwrap_or_default());
+            println!(
+                "Total={} Completadas={} Fallidas={} Revertidas={}",
+                job.total_operations,
+                job.completed_operations,
+                job.failed_operations,
+                job.rolled_back_operations
+            );
+            for op in operations {
+                println!(
+                    "[{}] {} -> {} ({})",
+                    op.status, op.source_path, op.dest_path, op.action
+                );
+            }
+        }
+        ReorgCommands::Apply { job_id, yes } => {
+            let (job, operations) = alexandria::reorganizer::get_job(&db, job_id).await?;
+            if job.status != "planned" {
+                eprintln!(
+                    "El job {} no está en estado planned (estado actual: {})",
+                    job_id, job.status
+                );
+                std::process::exit(1);
+            }
+            let pending: Vec<_> = operations
+                .into_iter()
+                .filter(|o| o.status == "pending")
+                .collect();
+            println!("=== Aplicar reorganización job={} ===", job_id);
+            println!("Operaciones pendientes: {}", pending.len());
+            for op in &pending {
+                println!("  {} -> {}", op.source_path, op.dest_path);
+            }
+            if !yes {
+                print!("¿Estás seguro? Se moverán archivos físicamente. Escribe 'yes' para continuar: ");
+                io::stdout().flush()?;
+                let mut input = String::new();
+                io::stdin().read_line(&mut input)?;
+                if input.trim() != "yes" {
+                    println!("Operación cancelada.");
+                    return Ok(());
+                }
+            }
+            alexandria::reorganizer::execute_plan(db, job_id, &config.data_dir).await?;
+            println!("Reorganización aplicada. Comprueba el estado con: alexandria reorg status --job-id {}", job_id);
+        }
+        ReorgCommands::Rollback { job_id, yes } => {
+            let (job, operations) = alexandria::reorganizer::get_job(&db, job_id).await?;
+            if job.status != "completed" && job.status != "failed" {
+                eprintln!(
+                    "No se puede hacer rollback del job {} en estado {}",
+                    job_id, job.status
+                );
+                std::process::exit(1);
+            }
+            let completed: Vec<_> = operations
+                .into_iter()
+                .filter(|o| o.status == "completed")
+                .collect();
+            println!("=== Revertir reorganización job={} ===", job_id);
+            println!("Operaciones completadas a revertir: {}", completed.len());
+            for op in &completed {
+                println!("  {} -> {}", op.dest_path, op.source_path);
+            }
+            if !yes {
+                print!("¿Estás seguro de revertir? Escribe 'yes' para continuar: ");
+                io::stdout().flush()?;
+                let mut input = String::new();
+                io::stdin().read_line(&mut input)?;
+                if input.trim() != "yes" {
+                    println!("Operación cancelada.");
+                    return Ok(());
+                }
+            }
+            alexandria::reorganizer::rollback_plan(&db, job_id).await?;
+            println!(
+                "Rollback completado. Comprueba el estado con: alexandria reorg status --job-id {}",
+                job_id
+            );
+        }
+    }
     Ok(())
 }
 

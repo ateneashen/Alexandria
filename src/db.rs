@@ -1,8 +1,11 @@
 use crate::error::{AlexandriaError, Result};
-use crate::models::{FileEntry, FileFilter, FileMetadata, Group, Note, ScanJob, Stats, Tag};
+use crate::groups::match_name;
+use crate::models::{
+    FileEntry, FileFilter, FileMetadata, Group, Note, ReorgJob, ReorgOperation, ScanJob, Stats, Tag,
+};
 use chrono::{DateTime, Utc};
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Row, Sqlite};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct Database {
@@ -111,44 +114,48 @@ impl Database {
 
     pub async fn list_files(&self, filter: &FileFilter) -> Result<Vec<FileEntry>> {
         let mut sql = String::from(
-            "SELECT id, path, name, extension, size_bytes, modified_at, scanned_at, file_type, \
-             duration_seconds, width, height, video_codec, audio_codec, has_subtitles, \
-             audio_tracks, subtitle_tracks, extra_json, notes, group_id FROM files WHERE 1=1",
+            "SELECT f.id, f.path, f.name, f.extension, f.size_bytes, f.modified_at, f.scanned_at, \
+             f.file_type, f.duration_seconds, f.width, f.height, f.video_codec, f.audio_codec, \
+             f.has_subtitles, f.audio_tracks, f.subtitle_tracks, f.extra_json, f.notes, f.group_id \
+             FROM files f WHERE 1=1",
         );
 
+        if filter.tag_id.is_some() {
+            sql.push_str(" AND f.id IN (SELECT file_id FROM file_tags WHERE tag_id = ?)");
+        }
         if filter.name.is_some() {
-            sql.push_str(" AND name LIKE ?");
+            sql.push_str(" AND f.name LIKE ?");
         }
         if filter.extension.is_some() {
-            sql.push_str(" AND extension = ?");
+            sql.push_str(" AND f.extension = ?");
         }
         if filter.file_type.is_some() {
-            sql.push_str(" AND file_type = ?");
+            sql.push_str(" AND f.file_type = ?");
         }
         if filter.min_size.is_some() {
-            sql.push_str(" AND size_bytes >= ?");
+            sql.push_str(" AND f.size_bytes >= ?");
         }
         if filter.max_size.is_some() {
-            sql.push_str(" AND size_bytes <= ?");
+            sql.push_str(" AND f.size_bytes <= ?");
         }
         if filter.has_subtitles.is_some() {
-            sql.push_str(" AND has_subtitles = ?");
+            sql.push_str(" AND f.has_subtitles = ?");
         }
         if filter.group_id.is_some() {
-            sql.push_str(" AND group_id = ?");
+            sql.push_str(" AND f.group_id = ?");
         }
         if filter.modified_after.is_some() {
-            sql.push_str(" AND modified_at >= ?");
+            sql.push_str(" AND f.modified_at >= ?");
         }
         if filter.modified_before.is_some() {
-            sql.push_str(" AND modified_at <= ?");
+            sql.push_str(" AND f.modified_at <= ?");
         }
 
         let sort_by = match filter.sort_by.as_deref() {
-            Some("size") => "size_bytes",
-            Some("modified_at") => "modified_at",
-            Some("duration") => "duration_seconds",
-            _ => "name",
+            Some("size") => "f.size_bytes",
+            Some("modified_at") => "f.modified_at",
+            Some("duration") => "f.duration_seconds",
+            _ => "f.name",
         };
         let sort_order = match filter.sort_order.as_deref() {
             Some("desc") => "DESC",
@@ -164,6 +171,9 @@ impl Database {
 
         let mut query = sqlx::query_as::<_, FileEntry>(&sql);
 
+        if let Some(tag_id) = filter.tag_id {
+            query = query.bind(tag_id);
+        }
         if let Some(name) = &filter.name {
             query = query.bind(format!("%{}%", name));
         }
@@ -198,38 +208,44 @@ impl Database {
     }
 
     pub async fn count_files(&self, filter: &FileFilter) -> Result<i64> {
-        let mut sql = String::from("SELECT COUNT(*) FROM files WHERE 1=1");
+        let mut sql = String::from("SELECT COUNT(*) FROM files f WHERE 1=1");
 
+        if filter.tag_id.is_some() {
+            sql.push_str(" AND f.id IN (SELECT file_id FROM file_tags WHERE tag_id = ?)");
+        }
         if filter.name.is_some() {
-            sql.push_str(" AND name LIKE ?");
+            sql.push_str(" AND f.name LIKE ?");
         }
         if filter.extension.is_some() {
-            sql.push_str(" AND extension = ?");
+            sql.push_str(" AND f.extension = ?");
         }
         if filter.file_type.is_some() {
-            sql.push_str(" AND file_type = ?");
+            sql.push_str(" AND f.file_type = ?");
         }
         if filter.min_size.is_some() {
-            sql.push_str(" AND size_bytes >= ?");
+            sql.push_str(" AND f.size_bytes >= ?");
         }
         if filter.max_size.is_some() {
-            sql.push_str(" AND size_bytes <= ?");
+            sql.push_str(" AND f.size_bytes <= ?");
         }
         if filter.has_subtitles.is_some() {
-            sql.push_str(" AND has_subtitles = ?");
+            sql.push_str(" AND f.has_subtitles = ?");
         }
         if filter.group_id.is_some() {
-            sql.push_str(" AND group_id = ?");
+            sql.push_str(" AND f.group_id = ?");
         }
         if filter.modified_after.is_some() {
-            sql.push_str(" AND modified_at >= ?");
+            sql.push_str(" AND f.modified_at >= ?");
         }
         if filter.modified_before.is_some() {
-            sql.push_str(" AND modified_at <= ?");
+            sql.push_str(" AND f.modified_at <= ?");
         }
 
         let mut query = sqlx::query_scalar::<_, i64>(&sql);
 
+        if let Some(tag_id) = filter.tag_id {
+            query = query.bind(tag_id);
+        }
         if let Some(name) = &filter.name {
             query = query.bind(format!("%{}%", name));
         }
@@ -602,6 +618,194 @@ impl Database {
             .bind(file_id)
             .execute(&self.pool)
             .await?;
+        Ok(())
+    }
+
+    pub async fn create_reorg_job(
+        &self,
+        strategy: &str,
+        template: Option<&str>,
+        filter_json: Option<&str>,
+        target_root: Option<&str>,
+        allow_cross_volume: bool,
+    ) -> Result<i64> {
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO reorg_jobs (strategy, template, filter_json, target_root, allow_cross_volume) \
+             VALUES (?, ?, ?, ?, ?) RETURNING id",
+        )
+        .bind(strategy)
+        .bind(template)
+        .bind(filter_json)
+        .bind(target_root)
+        .bind(if allow_cross_volume { 1 } else { 0 })
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(id)
+    }
+
+    pub async fn add_reorg_operations(
+        &self,
+        job_id: i64,
+        operations: &[ReorgOperation],
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        for op in operations {
+            sqlx::query(
+                "INSERT INTO reorg_operations \
+                 (job_id, file_id, source_path, dest_path, action, status, checksum_before, size_bytes, error_message) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(job_id)
+            .bind(op.file_id)
+            .bind(&op.source_path)
+            .bind(&op.dest_path)
+            .bind(&op.action)
+            .bind(&op.status)
+            .bind(op.checksum_before.as_deref())
+            .bind(op.size_bytes)
+            .bind(op.error_message.as_deref())
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub async fn get_reorg_job(&self, id: i64) -> Result<ReorgJob> {
+        let row = sqlx::query_as::<_, ReorgJob>(
+            "SELECT id, strategy, template, filter_json, target_root, status, created_at, \
+             started_at, finished_at, total_operations, completed_operations, failed_operations, \
+             rolled_back_operations, backup_db_path, allow_cross_volume FROM reorg_jobs WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.ok_or_else(|| AlexandriaError::NotFound(format!("Reorg job with id {} not found", id)))
+    }
+
+    pub async fn list_reorg_jobs(&self, limit: i64) -> Result<Vec<ReorgJob>> {
+        let rows = sqlx::query_as::<_, ReorgJob>(
+            "SELECT id, strategy, template, filter_json, target_root, status, created_at, \
+             started_at, finished_at, total_operations, completed_operations, failed_operations, \
+             rolled_back_operations, backup_db_path, allow_cross_volume FROM reorg_jobs \
+             ORDER BY created_at DESC LIMIT ?",
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    pub async fn get_reorg_operations(&self, job_id: i64) -> Result<Vec<ReorgOperation>> {
+        let rows = sqlx::query_as::<_, ReorgOperation>(
+            "SELECT id, job_id, file_id, source_path, dest_path, action, status, checksum_before, \
+             checksum_after, size_bytes, error_message, created_at, executed_at FROM reorg_operations \
+             WHERE job_id = ? ORDER BY id ASC",
+        )
+        .bind(job_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    pub async fn update_reorg_operation_status(
+        &self,
+        id: i64,
+        status: &str,
+        checksum_after: Option<&str>,
+        error: Option<&str>,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE reorg_operations SET status = ?, checksum_after = ?, error_message = ?, \
+             executed_at = CURRENT_TIMESTAMP WHERE id = ?",
+        )
+        .bind(status)
+        .bind(checksum_after)
+        .bind(error)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn update_reorg_job_counters_and_status(
+        &self,
+        id: i64,
+        status: &str,
+        total: i64,
+        completed: i64,
+        failed: i64,
+        rolled_back: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE reorg_jobs SET status = ?, total_operations = ?, completed_operations = ?, \
+             failed_operations = ?, rolled_back_operations = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?",
+        )
+        .bind(status)
+        .bind(total)
+        .bind(completed)
+        .bind(failed)
+        .bind(rolled_back)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn update_reorg_job_backup_path(&self, id: i64, path: &str) -> Result<()> {
+        sqlx::query("UPDATE reorg_jobs SET backup_db_path = ? WHERE id = ?")
+            .bind(path)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn update_reorg_job_started(&self, id: i64, status: &str) -> Result<()> {
+        sqlx::query(
+            "UPDATE reorg_jobs SET status = ?, started_at = CURRENT_TIMESTAMP WHERE id = ?",
+        )
+        .bind(status)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn update_file_path(&self, id: i64, new_path: &str) -> Result<()> {
+        let path = PathBuf::from(new_path);
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| new_path.to_string());
+        let extension = path
+            .extension()
+            .map(|e| e.to_string_lossy().to_string().to_lowercase());
+
+        let group_id = match match_name(&name) {
+            Some(group_match) => Some(
+                self.find_or_create_group(
+                    &group_match.display_name,
+                    group_match.kind.as_str(),
+                    &group_match.canonical_name,
+                )
+                .await?,
+            ),
+            None => None,
+        };
+
+        sqlx::query(
+            "UPDATE files SET path = ?, name = ?, extension = ?, group_id = ? WHERE id = ?",
+        )
+        .bind(new_path)
+        .bind(&name)
+        .bind(extension.as_deref())
+        .bind(group_id)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+
         Ok(())
     }
 

@@ -96,7 +96,7 @@ pub struct Stats {
     pub last_scan: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FileFilter {
     pub name: Option<String>,
     pub extension: Option<String>,
@@ -105,6 +105,7 @@ pub struct FileFilter {
     pub has_subtitles: Option<bool>,
     pub group_id: Option<i64>,
     pub file_type: Option<String>,
+    pub tag_id: Option<i64>,
     pub modified_after: Option<DateTime<Utc>>,
     pub modified_before: Option<DateTime<Utc>>,
     pub sort_by: Option<String>,
@@ -121,4 +122,96 @@ pub struct NoteRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct TagRequest {
     pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ReorgJob {
+    pub id: i64,
+    pub strategy: String,
+    pub template: Option<String>,
+    pub filter_json: Option<String>,
+    pub target_root: Option<String>,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub total_operations: i64,
+    pub completed_operations: i64,
+    pub failed_operations: i64,
+    pub rolled_back_operations: i64,
+    pub backup_db_path: Option<String>,
+    pub allow_cross_volume: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ReorgOperation {
+    pub id: i64,
+    pub job_id: i64,
+    pub file_id: i64,
+    pub source_path: String,
+    pub dest_path: String,
+    pub action: String,
+    pub status: String,
+    pub checksum_before: Option<String>,
+    pub checksum_after: Option<String>,
+    pub size_bytes: i64,
+    pub error_message: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub executed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReorgPlanRequest {
+    pub strategy: ReorgStrategy,
+    pub template: String,
+    pub target_root: String,
+    pub filter: Option<FileFilter>,
+    pub allow_cross_volume: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReorgStrategy {
+    ByType,
+    ByGroup,
+    ByDate,
+    ByTag,
+    Custom,
+}
+
+impl ReorgStrategy {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ReorgStrategy::ByType => "by-type",
+            ReorgStrategy::ByGroup => "by-group",
+            ReorgStrategy::ByDate => "by-date",
+            ReorgStrategy::ByTag => "by-tag",
+            ReorgStrategy::Custom => "custom",
+        }
+    }
+
+    pub fn default_template(&self) -> &'static str {
+        match self {
+            ReorgStrategy::ByType => "{file_type}/{name}.{ext}",
+            ReorgStrategy::ByGroup => "{group_kind}/{group_name}/{name}.{ext}",
+            ReorgStrategy::ByDate => "{year}/{month}/{name}.{ext}",
+            ReorgStrategy::ByTag => "{tag}/{name}.{ext}",
+            ReorgStrategy::Custom => "{file_type}/{name}.{ext}",
+        }
+    }
+}
+
+impl std::str::FromStr for ReorgStrategy {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "by-type" => Ok(ReorgStrategy::ByType),
+            "by-group" => Ok(ReorgStrategy::ByGroup),
+            "by-date" => Ok(ReorgStrategy::ByDate),
+            "by-tag" => Ok(ReorgStrategy::ByTag),
+            "custom" => Ok(ReorgStrategy::Custom),
+            _ => Err(format!("Unknown reorganization strategy: {}", s)),
+        }
+    }
 }

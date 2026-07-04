@@ -78,4 +78,67 @@ pub enum Commands {
         #[arg(short, long, help = "Etiqueta a remover")]
         remove: Option<String>,
     },
+
+    #[command(about = "Reorganizar archivos físicamente")]
+    Reorg {
+        #[command(subcommand)]
+        command: ReorgCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ReorgCommands {
+    #[command(about = "Generar un plan de reorganización")]
+    Plan {
+        #[arg(short, long, help = "Estrategia de organización")]
+        strategy: String,
+
+        #[arg(short, long, help = "Plantilla de ruta destino")]
+        template: String,
+
+        #[arg(short, long, help = "Directorio raíz destino")]
+        target_root: PathBuf,
+
+        #[arg(short, long, help = "Permitir movimientos entre volúmenes")]
+        allow_cross_volume: bool,
+
+        #[arg(short, long, help = "Filtrar por tipo de archivo")]
+        file_type: Option<String>,
+
+        #[arg(short, long, help = "Filtrar por extensión")]
+        extension: Option<String>,
+
+        #[arg(long, help = "Filtrar por id de etiqueta")]
+        tag_id: Option<i64>,
+
+        #[arg(long, help = "Mostrar plan sin crear job")]
+        dry_run: bool,
+    },
+
+    #[command(about = "Listar jobs de reorganización")]
+    List,
+
+    #[command(about = "Mostrar estado de un job")]
+    Status {
+        #[arg(short, long, help = "ID del job")]
+        job_id: i64,
+    },
+
+    #[command(about = "Aplicar un plan de reorganización")]
+    Apply {
+        #[arg(short, long, help = "ID del job")]
+        job_id: i64,
+
+        #[arg(short, long, help = "Confirmar sin preguntar")]
+        yes: bool,
+    },
+
+    #[command(about = "Revertir un job de reorganización")]
+    Rollback {
+        #[arg(short, long, help = "ID del job")]
+        job_id: i64,
+
+        #[arg(short, long, help = "Confirmar sin preguntar")]
+        yes: bool,
+    },
 }
