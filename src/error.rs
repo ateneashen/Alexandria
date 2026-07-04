@@ -25,6 +25,9 @@ pub enum AlexandriaError {
     #[error("Bad request: {0}")]
     BadRequest(String),
 
+    #[error("Conflict: {0}")]
+    Conflict(String),
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -34,6 +37,7 @@ impl IntoResponse for AlexandriaError {
         let (status, message) = match &self {
             AlexandriaError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
             AlexandriaError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
+            AlexandriaError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
             _ => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Internal error: {}", self),

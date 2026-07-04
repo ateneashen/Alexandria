@@ -503,6 +503,84 @@ async fn test_system_storage_endpoint() {
 }
 
 #[tokio::test]
+async fn test_scan_endpoint_starts_job() {
+    let (db, _path) = setup_test_db().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let scan_dir = tmp.path().join("scan-me");
+    std::fs::create_dir_all(&scan_dir).unwrap();
+    std::fs::write(scan_dir.join("sample.txt"), b"alexandria scan test").unwrap();
+
+    let state = Arc::new(AppState {
+        db,
+        data_dir: tmp.path().to_path_buf(),
+    });
+    let app = api_routes(state);
+
+    let request_body = serde_json::json!({
+        "path": scan_dir.to_string_lossy(),
+        "concurrency": 2,
+        "force": false,
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/scan")
+                .method("POST")
+                .header("content-type", "application/json")
+                .body(Body::from(request_body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let job_id = payload.get("job_id").unwrap().as_i64().unwrap();
+
+    // El job debe existir y estar en estado running/completed.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/scan-jobs/{}", job_id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Esperamos a que el escaneo en segundo plano termine.
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/scan-jobs/{}", job_id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let job: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(job
+        .get("status")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .starts_with("completed"));
+    assert_eq!(job.get("files_found").unwrap().as_i64().unwrap(), 1);
+}
+
+#[tokio::test]
 async fn test_reorg_plan_returns_estimate() {
     let (db, _db_path) = setup_test_db().await;
     let tmp = tempfile::tempdir().unwrap();

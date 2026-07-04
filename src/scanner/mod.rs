@@ -14,10 +14,23 @@ pub async fn scan_directory(
     db: &Database,
     root: &Path,
     concurrency: usize,
+    force: bool,
+) -> Result<ScanResult> {
+    scan_directory_with_job(db, root, concurrency, force, None).await
+}
+
+pub async fn scan_directory_with_job(
+    db: &Database,
+    root: &Path,
+    concurrency: usize,
     _force: bool,
+    existing_job_id: Option<i64>,
 ) -> Result<ScanResult> {
     let root_str = root.to_string_lossy().to_string();
-    let job_id = db.create_scan_job(&root_str).await?;
+    let job_id = match existing_job_id {
+        Some(id) => id,
+        None => db.create_scan_job(&root_str).await?,
+    };
 
     let files = walker::walk_directory(root)?;
     let files_found = files.len();

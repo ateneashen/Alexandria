@@ -61,6 +61,9 @@ let selectedReorgStrategy = null;
 /** Temporizador para debounce del buscador. */
 let searchDebounceTimer = null;
 
+/** Temporizador de refresco automático de escaneos en curso. */
+let scanPollTimer = null;
+
 // ============================================================
 // 2. HELPERS DE API
 // ============================================================
@@ -253,7 +256,72 @@ function formatExtraValue(value) {
 }
 
 // ============================================================
-// 5. NAVEGACIÓN PRINCIPAL
+// 5. MODAL DE ESCANEO
+// ============================================================
+
+function openScanModal() {
+    document.getElementById('scan-modal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    // Intenta sugerir una ruta amigable por defecto.
+    const input = document.getElementById('scan-path');
+    if (!input.value) {
+        input.value = '';
+        input.placeholder = 'C:/Users/Admin/Videos';
+    }
+    input.focus();
+}
+
+function closeScanModal() {
+    document.getElementById('scan-modal').classList.add('hidden');
+    document.body.style.overflow = '';
+}
+
+async function startScan() {
+    const path = document.getElementById('scan-path').value.trim();
+    const concurrency = Number(document.getElementById('scan-concurrency').value) || 4;
+    const force = document.getElementById('scan-force').checked;
+
+    if (!path) {
+        showToast('Escribe la ruta de una carpeta para escanear', 'warning');
+        return;
+    }
+
+    try {
+        const data = await apiPost('/api/scan', { path, concurrency, force });
+        closeScanModal();
+        showToast(`Escaneo iniciado (job #${data.job_id})`, 'success');
+        startScanPolling();
+    } catch (err) {
+        showToast('Error al iniciar escaneo: ' + err.message, 'error');
+    }
+}
+
+/** Refresca dashboard y lista de archivos mientras haya un escaneo activo. */
+function startScanPolling() {
+    if (scanPollTimer) return;
+    scanPollTimer = setInterval(async () => {
+        try {
+            const jobs = await apiGet('/api/scan-jobs');
+            renderScanStatus(jobs);
+            const running = (jobs || []).some(j => j.status === 'running');
+            if (currentView === 'dashboard') {
+                await renderDashboard();
+            } else if (currentView === 'files') {
+                await renderFiles();
+            }
+            if (!running) {
+                clearInterval(scanPollTimer);
+                scanPollTimer = null;
+                showToast('Escaneo finalizado', 'success');
+            }
+        } catch (err) {
+            console.error('Error consultando escaneos:', err);
+        }
+    }, 3000);
+}
+
+// ============================================================
+// 6. NAVEGACIÓN PRINCIPAL
 // ============================================================
 
 /** Cambia a la vista solicitada y recarga sus datos. */
@@ -289,25 +357,44 @@ function switchView(view) {
 // ============================================================
 
 async function renderDashboard() {
+    let stats;
     try {
-        const stats = await apiGet('/api/stats');
+        stats = await apiGet('/api/stats');
+        const onboarding = document.getElementById('dashboard-onboarding');
+        const toolbar = document.getElementById('dashboard-toolbar');
         const cards = document.getElementById('dashboard-cards');
-        cards.innerHTML = '';
-        cards.appendChild(StatCard({ icon: '📁', value: stats.total_files ?? 0, label: 'Archivos indexados' }));
-        cards.appendChild(StatCard({ icon: '🎬', value: stats.video_files ?? 0, label: 'Videos' }));
-        cards.appendChild(StatCard({ icon: '🎵', value: stats.audio_files ?? 0, label: 'Audio' }));
-        cards.appendChild(StatCard({ icon: '📄', value: stats.pdf_files ?? 0, label: 'PDFs' }));
-        cards.appendChild(StatCard({ icon: '🗜️', value: stats.archive_files ?? 0, label: 'Archivos comprimidos' }));
-        cards.appendChild(StatCard({ icon: '💾', value: formatBytes(stats.total_size_bytes ?? 0), label: 'Tamaño total' }));
-        cards.appendChild(StatCard({ icon: '🎭', value: stats.group_count ?? 0, label: 'Grupos' }));
-        cards.appendChild(StatCard({ icon: '🕒', value: formatDate(stats.last_scan), label: 'Último escaneo' }));
+        const chartPanel = document.getElementById('type-chart-panel');
+
+        if ((stats.total_files ?? 0) === 0) {
+            onboarding.classList.remove('hidden');
+            toolbar.classList.add('hidden');
+            cards.classList.add('hidden');
+            chartPanel.classList.add('hidden');
+        } else {
+            onboarding.classList.add('hidden');
+            toolbar.classList.remove('hidden');
+            cards.classList.remove('hidden');
+            chartPanel.classList.remove('hidden');
+
+            cards.innerHTML = '';
+            cards.appendChild(StatCard({ icon: '📁', value: stats.total_files ?? 0, label: 'Archivos indexados' }));
+            cards.appendChild(StatCard({ icon: '🎬', value: stats.video_files ?? 0, label: 'Videos' }));
+            cards.appendChild(StatCard({ icon: '🎵', value: stats.audio_files ?? 0, label: 'Audio' }));
+            cards.appendChild(StatCard({ icon: '📄', value: stats.pdf_files ?? 0, label: 'PDFs' }));
+            cards.appendChild(StatCard({ icon: '🗜️', value: stats.archive_files ?? 0, label: 'Archivos comprimidos' }));
+            cards.appendChild(StatCard({ icon: '💾', value: formatBytes(stats.total_size_bytes ?? 0), label: 'Tamaño total' }));
+            cards.appendChild(StatCard({ icon: '🎭', value: stats.group_count ?? 0, label: 'Grupos' }));
+            cards.appendChild(StatCard({ icon: '🕒', value: formatDate(stats.last_scan), label: 'Último escaneo' }));
+        }
     } catch (err) {
         showToast('No se pudieron cargar las estadísticas: ' + err.message, 'error');
     }
 
     try {
         const payload = await apiGet('/api/stats/by-type');
-        renderTypeChart(payload.data || {});
+        if ((stats?.total_files ?? 0) > 0) {
+            renderTypeChart(payload.data || {});
+        }
     } catch (err) {
         showToast('No se pudo cargar el breakdown por tipo: ' + err.message, 'error');
     }
@@ -315,8 +402,34 @@ async function renderDashboard() {
     try {
         const jobs = await apiGet('/api/scan-jobs');
         renderScanJobs(jobs);
+        renderScanStatus(jobs);
     } catch (err) {
         showToast('No se pudieron cargar los escaneos: ' + err.message, 'error');
+    }
+}
+
+/** Muestra un aviso si hay un escaneo en curso o el último job falló. */
+function renderScanStatus(jobs) {
+    const bar = document.getElementById('scan-status-bar');
+    if (!jobs || jobs.length === 0) {
+        bar.classList.add('hidden');
+        return;
+    }
+    const latest = jobs[0];
+    if (latest.status === 'running') {
+        bar.classList.remove('hidden');
+        bar.innerHTML = `
+            <span class="scan-pulse" aria-hidden="true"></span>
+            <span>Escaneando <strong>${escapeHtml(latest.root_path)}</strong> (job #${latest.id})...</span>
+        `;
+    } else if (latest.status === 'failed' || latest.status === 'completed_with_errors') {
+        bar.classList.remove('hidden');
+        bar.innerHTML = `
+            <span class="badge status-failed">Error</span>
+            <span>El último escaneo (job #${latest.id}) finalizó con errores.</span>
+        `;
+    } else {
+        bar.classList.add('hidden');
     }
 }
 
@@ -368,6 +481,43 @@ function renderScanJobs(jobs) {
 // ============================================================
 
 async function renderFiles() {
+    let totalCount = 0;
+    try {
+        const data = await apiGet('/api/files/count');
+        totalCount = data.count || 0;
+    } catch (err) {
+        showToast('Error al contar archivos: ' + err.message, 'error');
+    }
+
+    const onboarding = document.getElementById('files-onboarding');
+    const toolbar = document.querySelector('.files-toolbar');
+    const chips = document.getElementById('file-type-chips');
+    const filters = document.querySelector('.filters-grid');
+    const resultsBar = document.querySelector('.results-bar');
+    const tableWrap = document.querySelector('#files-table').closest('.table-wrap');
+    const pagination = document.querySelector('.pagination');
+    const filesEmpty = document.getElementById('files-empty');
+
+    if (totalCount === 0) {
+        onboarding.classList.remove('hidden');
+        toolbar.classList.add('hidden');
+        chips.classList.add('hidden');
+        filters.classList.add('hidden');
+        resultsBar.classList.add('hidden');
+        tableWrap.classList.add('hidden');
+        pagination.classList.add('hidden');
+        filesEmpty.classList.add('hidden');
+        return;
+    }
+
+    onboarding.classList.add('hidden');
+    toolbar.classList.remove('hidden');
+    chips.classList.remove('hidden');
+    filters.classList.remove('hidden');
+    resultsBar.classList.remove('hidden');
+    tableWrap.classList.remove('hidden');
+    pagination.classList.remove('hidden');
+
     await loadFilterOptions();
     await applyFileFilters();
 }
@@ -495,8 +645,8 @@ function renderFileRows(files) {
             <td>${f.has_subtitles ? '✅' : '—'}</td>
             <td>${escapeHtml(groupName(f.group_id))}</td>
             <td>
-                <button class="btn-small btn-primary" data-id="${f.id}">Ver detalle</button>
-                <button class="btn-small btn-secondary" data-notes="${f.id}">Historial</button>
+                <button class="btn-small btn-primary" data-id="${f.id}" title="Ver detalle del archivo">Ver detalle</button>
+                <button class="btn-small btn-secondary" data-notes="${f.id}" title="Ver historial de notas">Historial</button>
             </td>
         `;
         tr.querySelector('a').addEventListener('click', e => {
@@ -1180,6 +1330,22 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Alexandria indexa archivos locales. Escanea, explora, etiqueta y reorganiza sin conexión.', 'info');
     });
 
+    // --- Escanear carpeta ---
+    document.getElementById('btn-first-scan').addEventListener('click', openScanModal);
+    document.getElementById('btn-scan-another').addEventListener('click', openScanModal);
+    document.getElementById('btn-scan-folder').addEventListener('click', openScanModal);
+    document.getElementById('btn-files-first-scan').addEventListener('click', openScanModal);
+
+    document.getElementById('btn-close-scan-modal').addEventListener('click', closeScanModal);
+    document.getElementById('btn-cancel-scan').addEventListener('click', closeScanModal);
+    document.getElementById('scan-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'scan-modal') closeScanModal();
+    });
+    document.getElementById('btn-start-scan').addEventListener('click', startScan);
+    document.getElementById('scan-path').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') startScan();
+    });
+
     // --- Archivos ---
     document.getElementById('filter-name').addEventListener('input', () => {
         clearTimeout(searchDebounceTimer);
@@ -1272,4 +1438,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Carga inicial
     switchView('dashboard');
+
+    // Si ya había un escaneo en curso al cargar la página, seguimos refrescando.
+    (async () => {
+        try {
+            const jobs = await apiGet('/api/scan-jobs');
+            if ((jobs || []).some(j => j.status === 'running')) {
+                startScanPolling();
+            }
+        } catch (err) {
+            console.error('No se pudo comprobar escaneos activos:', err);
+        }
+    })();
 });

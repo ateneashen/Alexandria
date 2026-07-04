@@ -12,16 +12,34 @@ Indexador local de activos digitales escrito en Rust. Escanea directorios, extra
 - **Notas y etiquetas**: añade notas históricas y tags a cualquier archivo; gestión desde CLI y web.
 - **Reorganización física de archivos (beta)**: mueve/renombra archivos según plantillas basadas en metadatos, grupos, fecha o tags; con dry-run, backup de BD, verificación de checksums, rollback y **estimación de espacio en disco**.
 - **Base de datos SQLite embebida**: sin instalación externa.
-- **Interfaz web vanilla renovada**: navegación por sidebar, dashboard con gráficos, listado de archivos con filtros avanzados, modal de detalle con pestañas, grupos visuales y wizard de reorganización; todo embebido en el binario.
+- **Interfaz web vanilla renovada (v0.5.x)**: navegación por sidebar, dashboard con gráficos, listado de archivos con filtros avanzados, modal de detalle con pestañas, grupos visuales, wizard de reorganización y **botón para escanear carpetas directamente desde la web**; todo embebido en el binario.
 - **Single binary**: copia y ejecuta desde cualquier carpeta.
 - **Fallback robusto**: funciona solo con metadatos del sistema de archivos si `ffprobe` no está instalado.
 
 ## Requisitos
 
-- [Rust](https://www.rust-lang.org/) 1.75 o superior.
+- [Rust](https://www.rust-lang.org/) 1.75 o superior **solo si compilas desde fuente**.
 - (Opcional) `ffprobe` en el PATH para metadatos avanzados de video y audio.
 
-## Instalación
+## Instalación y primeros pasos
+
+Alexandria se distribuye como un **único ejecutable**: no necesitas instalar nada más que descargar `alexandria.exe` (y, opcionalmente, `ffprobe` si quieres metadatos de video/audio).
+
+1. **Descarga** `alexandria.exe` en la carpeta que prefieras (por ejemplo, `C:\Alexandria`).
+2. **Abre** una ventana de PowerShell o CMD en esa carpeta:
+   - Haz clic derecho dentro de la carpeta mientras pulsas `Shift` → "Abrir la ventana de PowerShell aquí".
+3. **Ejecuta** el servidor web:
+   ```powershell
+   .\alexandria.exe serve
+   ```
+4. **Abre** tu navegador en http://127.0.0.1:3000.
+5. En la página de inicio, haz clic en **"Escanear mi primera carpeta"**.
+6. Escribe la ruta que quieres indexar, por ejemplo `C:/Users/Admin/Videos`, elige la velocidad y pulsa **"Iniciar escaneo"**.
+7. Espera a que termine el escaneo y empieza a explorar tus archivos.
+
+> 💡 Consejo: si el antivirus o Windows Defender escanea el ejecutable la primera vez, es normal; el binario no está firmado. Puedes añadir una excepción para la carpeta si lo prefieres.
+
+## Compilar desde el código fuente
 
 ```bash
 git clone https://github.com/ateneashen/alexandria.git
@@ -46,6 +64,13 @@ O en Git Bash:
 export CARGO_TARGET_DIR=/c/alexandria-target
 cargo build --release
 ```
+
+## Vistas principales de la interfaz web
+
+- **Dashboard**: muestra el estado general (archivos indexados, espacio, grupos), un gráfico de tipos de archivo, el historial de escaneos y, si la base de datos está vacía, una guía de bienvenida con el botón "Escanear mi primera carpeta".
+- **Archivos**: listado con búsqueda por nombre, filtros por tipo/extensión/tamaño/subtítulos/grupo y paginación. Desde aquí también puedes abrir el detalle de un archivo para ver metadatos, notas y etiquetas.
+- **Grupos**: tarjetas visuales de series, películas y colecciones detectadas automáticamente; al hacer clic en un grupo se muestran sus archivos.
+- **Reorganizar**: wizard paso a paso para mover/renombrar archivos físicamente según plantillas. Incluye estimación de espacio, advertencias y rollback.
 
 ## Uso
 
@@ -170,6 +195,8 @@ Las películas con el mismo título y año pero diferentes versiones (Director's
 - `GET /api/file-types` — tipos de archivo indexados.
 - `GET /api/extensions` — extensiones indexadas.
 - `GET /api/scan-jobs` — últimos trabajos de escaneo.
+- `GET /api/scan-jobs/:id` — estado de un trabajo de escaneo concreto.
+- `POST /api/scan` — iniciar un escaneo desde la interfaz (`{ "path": "...", "concurrency": 4, "force": false }`).
 - `GET /api/system/storage` — información de discos del sistema (capacidad, libre, usado).
 - `GET /api/reorganize/strategies` — estrategias y tokens de reorganización.
 - `POST /api/reorganize/plan` — generar plan de reorganización.

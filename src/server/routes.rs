@@ -36,6 +36,8 @@ pub fn api_routes(state: Arc<AppState>) -> Router {
         .route("/api/file-types", get(list_file_types))
         .route("/api/extensions", get(list_extensions))
         .route("/api/scan-jobs", get(list_scan_jobs))
+        .route("/api/scan-jobs/:id", get(get_scan_job))
+        .route("/api/scan", post(start_scan))
         .route("/api/groups", get(list_groups))
         .route("/api/groups/:id", get(get_group))
         .route("/api/groups/:id/files", get(list_group_files))
@@ -157,6 +159,60 @@ async fn list_extensions(State(state): State<Arc<AppState>>) -> Result<Json<serd
 async fn list_scan_jobs(State(state): State<Arc<AppState>>) -> Result<Json<Vec<ScanJob>>> {
     let jobs = state.db.list_scan_jobs().await?;
     Ok(Json(jobs))
+}
+
+async fn get_scan_job(
+    State(state): State<Arc<AppState>>,
+    AxumPath(id): AxumPath<i64>,
+) -> Result<Json<ScanJob>> {
+    let job = state.db.get_scan_job(id).await?;
+    Ok(Json(job))
+}
+
+#[derive(Debug, Deserialize)]
+struct StartScanRequest {
+    path: String,
+    #[serde(default = "default_concurrency")]
+    concurrency: usize,
+    #[serde(default)]
+    force: bool,
+}
+
+fn default_concurrency() -> usize {
+    4
+}
+
+async fn start_scan(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<StartScanRequest>,
+) -> Result<Json<serde_json::Value>> {
+    let path_str = payload.path.trim();
+    let root = PathBuf::from(path_str);
+
+    if !root.is_dir() {
+        return Err(AlexandriaError::BadRequest(
+            "La ruta no existe o no es un directorio".to_string(),
+        ));
+    }
+
+    if state.db.is_scan_running().await? {
+        return Err(AlexandriaError::Conflict(
+            "Ya hay un escaneo en curso".to_string(),
+        ));
+    }
+
+    let job_id = state.db.create_scan_job(path_str).await?;
+    let db = state.db.clone();
+    let concurrency = payload.concurrency.max(1);
+    let force = payload.force;
+
+    tokio::spawn(async move {
+        let _ =
+            crate::scanner::scan_directory_with_job(&db, &root, concurrency, force, Some(job_id))
+                .await;
+    });
+
+    Ok(Json(json!({ "job_id": job_id })))
 }
 
 #[derive(Debug, Deserialize)]

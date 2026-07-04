@@ -513,6 +513,26 @@ impl Database {
         Ok(rows)
     }
 
+    pub async fn get_scan_job(&self, id: i64) -> Result<ScanJob> {
+        let row = sqlx::query_as::<_, ScanJob>(
+            "SELECT id, started_at, finished_at, root_path, files_found, files_indexed, errors, status \
+             FROM scan_jobs WHERE id = ?"
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.ok_or_else(|| AlexandriaError::NotFound(format!("Scan job with id {} not found", id)))
+    }
+
+    pub async fn is_scan_running(&self) -> Result<bool> {
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM scan_jobs WHERE status = 'running'")
+                .fetch_one(&self.pool)
+                .await?;
+        Ok(count > 0)
+    }
+
     pub async fn list_file_types(&self) -> Result<Vec<String>> {
         let rows = sqlx::query_scalar::<_, String>(
             "SELECT DISTINCT file_type FROM files WHERE file_type IS NOT NULL ORDER BY file_type",

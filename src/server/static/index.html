@@ -13,7 +13,7 @@
             <span class="brand-icon">📚</span>
             <div class="brand-text">
                 <strong>Alexandria</strong>
-                <small>v0.5.0</small>
+                <small>v0.5.1</small>
             </div>
             <button class="sidebar-toggle" id="sidebar-toggle" title="Colapsar menú">☰</button>
         </div>
@@ -63,11 +63,46 @@
                     </p>
                 </div>
 
+                <div class="scan-status-bar hidden" id="scan-status-bar" role="status" aria-live="polite">
+                    <!-- Estado del escaneo en curso / último error -->
+                </div>
+
+                <div class="dashboard-toolbar hidden" id="dashboard-toolbar">
+                    <h3>📂 Tu catálogo</h3>
+                    <button id="btn-scan-another" class="btn-secondary" title="Añadir más archivos al catálogo">🔍 Escanear otra carpeta</button>
+                </div>
+
+                <div class="onboarding-panel hidden" id="dashboard-onboarding">
+                    <div class="onboarding-header">
+                        <div class="empty-icon">🚀</div>
+                        <h2>¡Empecemos!</h2>
+                        <p class="muted">Todavía no hay archivos indexados. Sigue estos pasos para crear tu catálogo.</p>
+                    </div>
+                    <div class="onboarding-steps">
+                        <div class="onboarding-step">
+                            <span class="step-icon">1</span>
+                            <h4>📁 Escanear una carpeta</h4>
+                            <p>Elige una carpeta del PC y Alexandria indexará sus archivos automáticamente.</p>
+                        </div>
+                        <div class="onboarding-step">
+                            <span class="step-icon">2</span>
+                            <h4>🔎 Explora y etiqueta</h4>
+                            <p>Busca, filtra por tipo o tamaño, y añade notas y etiquetas a tus archivos.</p>
+                        </div>
+                        <div class="onboarding-step">
+                            <span class="step-icon">3</span>
+                            <h4>🧹 Reorganiza</h4>
+                            <p>Crea planes para mover o renombrar archivos según reglas basadas en metadatos.</p>
+                        </div>
+                    </div>
+                    <button id="btn-first-scan" class="btn-primary btn-large" title="Comenzar tu primer escaneo">📁 Escanear mi primera carpeta</button>
+                </div>
+
                 <div class="cards-grid" id="dashboard-cards">
                     <!-- Se rellena desde JS -->
                 </div>
 
-                <div class="panel">
+                <div class="panel" id="type-chart-panel">
                     <h3>📊 Distribución por tipo de archivo</h3>
                     <div class="bar-chart" id="type-chart">
                         <!-- Se rellena desde JS -->
@@ -103,17 +138,25 @@
                             <span class="search-icon">🔍</span>
                             <input type="text" id="filter-name" placeholder="Buscar por nombre..." autocomplete="off">
                         </div>
-                        <button id="btn-clear-filters" class="btn-secondary">Limpiar filtros</button>
+                        <button id="btn-scan-folder" class="btn-secondary" title="Indexar una nueva carpeta">+ Escanear carpeta</button>
+                        <button id="btn-clear-filters" class="btn-secondary" title="Quitar todos los filtros">Limpiar filtros</button>
+                    </div>
+
+                    <div class="onboarding-panel hidden" id="files-onboarding">
+                        <div class="empty-icon">📂</div>
+                        <h3>Aún no hay archivos indexados</h3>
+                        <p class="muted">Escanea una carpeta para empezar a explorar tu catálogo.</p>
+                        <button id="btn-files-first-scan" class="btn-primary" title="Comenzar tu primer escaneo">📁 Escanear una carpeta</button>
                     </div>
 
                     <div class="filter-chips" id="file-type-chips">
                         <span class="filter-label">Tipo:</span>
-                        <button class="chip" data-type="">Todos</button>
-                        <button class="chip" data-type="video">🎬 Video</button>
-                        <button class="chip" data-type="audio">🎵 Audio</button>
-                        <button class="chip" data-type="pdf">📄 PDF</button>
-                        <button class="chip" data-type="archive">🗜️ Archivo</button>
-                        <button class="chip" data-type="unknown">❓ Desconocido</button>
+                        <button class="chip" data-type="" title="Mostrar todos los tipos">Todos</button>
+                        <button class="chip" data-type="video" title="Filtrar videos">🎬 Video</button>
+                        <button class="chip" data-type="audio" title="Filtrar audio">🎵 Audio</button>
+                        <button class="chip" data-type="pdf" title="Filtrar PDFs">📄 PDF</button>
+                        <button class="chip" data-type="archive" title="Filtrar archivos comprimidos">🗜️ Archivo</button>
+                        <button class="chip" data-type="unknown" title="Filtrar tipo desconocido">❓ Desconocido</button>
                     </div>
 
                     <div class="filters-grid">
@@ -445,6 +488,40 @@
                 </div>
             </section>
         </main>
+    </div>
+
+    <!-- Modal de escaneo de carpeta -->
+    <div class="modal-overlay hidden" id="scan-modal" role="dialog" aria-modal="true" aria-labelledby="scan-modal-title">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="scan-modal-title">📁 Escanear carpeta</h2>
+                <button class="modal-close" id="btn-close-scan-modal" title="Cerrar">✕</button>
+            </div>
+            <div class="modal-body">
+                <label class="field">
+                    <span>Ruta de la carpeta</span>
+                    <input type="text" id="scan-path" placeholder="C:/Users/Admin/Videos" autocomplete="off">
+                </label>
+                <label class="field">
+                    <span>Velocidad</span>
+                    <select id="scan-concurrency">
+                        <option value="2">Lenta (2 tareas)</option>
+                        <option value="4" selected>Normal (4 tareas)</option>
+                        <option value="8">Rápida (8 tareas)</option>
+                    </select>
+                    <small class="hint">Más concurrencia es más rápida, pero usa más CPU y lecturas de disco.</small>
+                </label>
+                <label class="field inline-check">
+                    <input type="checkbox" id="scan-force">
+                    <span>Forzar re-escaneo de archivos ya indexados</span>
+                </label>
+                <p class="muted hint">Si marcas esta opción, Alexandria volverá a extraer metadatos de archivos que ya están en el catálogo.</p>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-cancel-scan" class="btn-secondary">Cancelar</button>
+                <button id="btn-start-scan" class="btn-primary">Iniciar escaneo</button>
+            </div>
+        </div>
     </div>
 
     <!-- Modal de detalle de archivo -->
