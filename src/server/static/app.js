@@ -1,11 +1,116 @@
-const pageSize = 25;
-let currentOffset = 0;
-let currentFilters = {};
-let fileCount = 0;
-let selectedFileId = null;
-let groupsMap = new Map();
-let currentTab = 'dashboard';
+/**
+ * Alexandria Frontend — app.js
+ * ==============================
+ * Aplicación vanilla que sirve de interfaz de usuario para el indexador
+ * local Alexandria. No usa frameworks ni dependencias de red.
+ *
+ * Estructura didáctica:
+ * 1. Estado global
+ * 2. Helpers de API
+ * 3. Utilidades de presentación
+ * 4. Componentes reutilizables
+ * 5. Vistas (Dashboard, Archivos, Grupos, Reorganizar)
+ * 6. Detalle de archivo (modal con pestañas)
+ * 7. Inicialización y eventos
+ */
 
+// ============================================================
+// 1. ESTADO GLOBAL
+// ============================================================
+
+/** Vista activa en la navegación principal. */
+let currentView = 'dashboard';
+
+/** Configuración de paginación para la lista de archivos. */
+let filePage = {
+    size: 25,
+    offset: 0,
+    count: 0,
+};
+
+/** Filtros actuales aplicados a la lista de archivos. */
+let fileFilters = {
+    name: null,
+    extension: null,
+    file_type: null,
+    min_size: null,
+    max_size: null,
+    has_subtitles: null,
+    group_id: null,
+    modified_after: null,
+    modified_before: null,
+    sort_by: 'name',
+    sort_order: 'asc',
+};
+
+/** ID del archivo seleccionado en el modal de detalle. */
+let selectedFileId = null;
+
+/** Mapa id -> nombre de grupo para mostrar nombres legibles. */
+let groupsMap = new Map();
+
+/** Cache de estrategias de reorganización devueltas por el backend. */
+let reorgStrategies = [];
+
+/** ID del job de reorganización activo. */
+let currentReorgJobId = null;
+
+/** Estrategia seleccionada en el wizard. */
+let selectedReorgStrategy = null;
+
+/** Temporizador para debounce del buscador. */
+let searchDebounceTimer = null;
+
+// ============================================================
+// 2. HELPERS DE API
+// ============================================================
+
+/**
+ * Realiza una petición GET a la API y devuelve JSON.
+ * Muestra un toast si falla la conexión.
+ */
+async function apiGet(path) {
+    const res = await fetch(path);
+    if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`GET ${path} → ${res.status}: ${text}`);
+    }
+    return res.json();
+}
+
+/**
+ * Realiza una petición POST con body JSON.
+ */
+async function apiPost(path, body) {
+    const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data.error || `POST ${path} → ${res.status}`);
+    }
+    return data;
+}
+
+/**
+ * Realiza una petición DELETE.
+ */
+async function apiDelete(path) {
+    const res = await fetch(path, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data.error || `DELETE ${path} → ${res.status}`);
+    }
+    return data;
+}
+
+// ============================================================
+// 3. UTILIDADES DE PRESENTACIÓN
+// ============================================================
+
+/** Formatea bytes a unidades humanas (B, KB, MB...). */
 function formatBytes(bytes) {
     if (bytes === 0 || bytes == null) return '0 B';
     const k = 1024;
@@ -14,6 +119,7 @@ function formatBytes(bytes) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+/** Formatea segundos como "Xh Ym Zs". */
 function formatDuration(seconds) {
     if (seconds == null) return '-';
     const h = Math.floor(seconds / 3600);
@@ -22,295 +128,100 @@ function formatDuration(seconds) {
     return `${h}h ${m}m ${s}s`;
 }
 
+/** Formatea una fecha ISO a texto local. */
 function formatDate(iso) {
     if (!iso) return 'Nunca';
     return new Date(iso).toLocaleString();
 }
 
+/** Escapa HTML para evitar XSS. */
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
+/** Devuelve un badge con color según el tipo de archivo. */
 function typeBadge(fileType) {
     const type = (fileType || 'unknown').toLowerCase();
-    return `<span class="badge type-${type}">${escapeHtml(type)}</span>`;
+    const icons = { video: '🎬', audio: '🎵', pdf: '📄', archive: '🗜️', unknown: '❓' };
+    return `<span class="badge type-${type}">${icons[type] || ''} ${escapeHtml(type)}</span>`;
 }
 
+/** Devuelve el nombre de un grupo a partir de su id. */
 function groupName(id) {
     if (id == null) return '-';
-    return groupsMap.get(id) || `Grupo ${id}`;
+    return groupsMap.get(String(id)) || `Grupo ${id}`;
 }
 
-function switchTab(tab) {
-    currentTab = tab;
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.tab === tab);
-    });
-    document.querySelectorAll('.tab-panel').forEach(panel => {
-        panel.classList.toggle('hidden', panel.id !== `tab-${tab}`);
-    });
-
-    if (tab === 'dashboard') loadDashboard();
-    if (tab === 'files') loadFiles();
-    if (tab === 'groups') loadGroups();
-    if (tab === 'reorganize') loadReorganizeTab();
-}
-
-async function loadDashboard() {
-    try {
-        const res = await fetch('/api/stats');
-        const stats = await res.json();
-        document.getElementById('dash-total').textContent = stats.total_files ?? 0;
-        document.getElementById('dash-size').textContent = formatBytes(stats.total_size_bytes ?? 0);
-        document.getElementById('dash-groups').textContent = stats.group_count ?? 0;
-        document.getElementById('dash-scan').textContent = formatDate(stats.last_scan);
-    } catch (err) {
-        console.error('Error loading stats:', err);
-    }
-
-    try {
-        const res = await fetch('/api/stats/by-type');
-        const payload = await res.json();
-        const data = payload.data || {};
-        document.getElementById('type-video').textContent = data.video ?? 0;
-        document.getElementById('type-audio').textContent = data.audio ?? 0;
-        document.getElementById('type-pdf').textContent = data.pdf ?? 0;
-        document.getElementById('type-archive').textContent = data.archive ?? 0;
-        document.getElementById('type-unknown').textContent = data.unknown ?? 0;
-    } catch (err) {
-        console.error('Error loading by-type stats:', err);
-    }
-
-    try {
-        const res = await fetch('/api/scan-jobs');
-        const jobs = await res.json();
-        renderScanJobs(jobs);
-    } catch (err) {
-        console.error('Error loading scan jobs:', err);
+/** Devuelve un icono según el tipo de grupo. */
+function groupIcon(kind) {
+    switch (kind) {
+        case 'series': return '📺';
+        case 'movie': return '🎬';
+        case 'collection': return '📁';
+        default: return '📦';
     }
 }
 
-function renderScanJobs(jobs) {
-    const tbody = document.querySelector('#scan-jobs-table tbody');
+/** Muestra un toast en la esquina inferior derecha. */
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+    toast.innerHTML = `
+        <span>${icons[type] || 'ℹ️'}</span>
+        <span class="toast-message">${escapeHtml(message)}</span>
+        <button class="toast-close" title="Cerrar">✕</button>
+    `;
+    toast.querySelector('.toast-close').addEventListener('click', () => toast.remove());
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(20px)';
+        setTimeout(() => toast.remove(), 250);
+    }, 5000);
+}
+
+/** Cambia el título de la vista activa. */
+function setPageTitle(title) {
+    document.getElementById('page-title').textContent = title;
+}
+
+// ============================================================
+// 4. COMPONENTES REUTILIZABLES
+// ============================================================
+
+/** Crea una tarjeta de estadística. */
+function StatCard({ icon, value, label, colorClass = '' }) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+        <span class="card-icon ${colorClass}">${icon}</span>
+        <span class="card-value">${escapeHtml(String(value))}</span>
+        <span class="card-label">${escapeHtml(label)}</span>
+    `;
+    return card;
+}
+
+/** Renderiza una tabla genérica en el tbody de un selector dado. */
+function renderTable(selector, rows) {
+    const tbody = document.querySelector(`${selector} tbody`);
     tbody.innerHTML = '';
-    if (!jobs.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="muted">No hay escaneos registrados.</td></tr>';
+    if (!rows || rows.length === 0) {
+        const cols = tbody.closest('table').querySelectorAll('thead th').length;
+        tbody.innerHTML = `<tr><td colspan="${cols}" class="muted" style="text-align:center">No hay datos.</td></tr>`;
         return;
     }
-    for (const j of jobs) {
+    for (const row of rows) {
         const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${formatDate(j.started_at)}</td>
-            <td>${formatDate(j.finished_at)}</td>
-            <td title="${escapeHtml(j.root_path)}">${escapeHtml(j.root_path)}</td>
-            <td>${j.files_found ?? 0}</td>
-            <td>${j.files_indexed ?? 0}</td>
-            <td>${j.errors ?? 0}</td>
-            <td><span class="badge status-${j.status}">${escapeHtml(j.status)}</span></td>
-        `;
+        tr.innerHTML = row;
         tbody.appendChild(tr);
     }
 }
 
-function buildFileFilterParams() {
-    const params = new URLSearchParams();
-    params.set('limit', pageSize);
-    params.set('offset', currentOffset);
-    if (currentFilters.name) params.set('name', currentFilters.name);
-    if (currentFilters.extension) params.set('extension', currentFilters.extension);
-    if (currentFilters.file_type) params.set('file_type', currentFilters.file_type);
-    if (currentFilters.min_size) params.set('min_size', currentFilters.min_size);
-    if (currentFilters.max_size) params.set('max_size', currentFilters.max_size);
-    if (currentFilters.has_subtitles != null) params.set('has_subtitles', currentFilters.has_subtitles);
-    if (currentFilters.group_id) params.set('group_id', currentFilters.group_id);
-    if (currentFilters.modified_after) params.set('modified_after', currentFilters.modified_after);
-    if (currentFilters.modified_before) params.set('modified_before', currentFilters.modified_before);
-    if (currentFilters.sort_by) params.set('sort_by', currentFilters.sort_by);
-    if (currentFilters.sort_order) params.set('sort_order', currentFilters.sort_order);
-    return params;
-}
-
-async function loadFileCount() {
-    const params = buildFileFilterParams();
-    params.delete('limit');
-    params.delete('offset');
-    try {
-        const res = await fetch('/api/files/count?' + params.toString());
-        const data = await res.json();
-        fileCount = data.count || 0;
-        document.getElementById('results-count').textContent = `Total: ${fileCount} archivo(s)`;
-        updatePageInfo();
-    } catch (err) {
-        console.error('Error loading file count:', err);
-    }
-}
-
-function updatePageInfo() {
-    const start = fileCount === 0 ? 0 : currentOffset + 1;
-    const end = Math.min(currentOffset + pageSize, fileCount);
-    document.getElementById('page-info').textContent = `Mostrando ${start}-${end} de ${fileCount}`;
-}
-
-async function loadFiles() {
-    await loadFileCount();
-    const params = buildFileFilterParams();
-    try {
-        const res = await fetch('/api/files?' + params.toString());
-        const data = await res.json();
-        renderFiles(data.data || [], '#files-table');
-        updatePageInfo();
-    } catch (err) {
-        console.error('Error loading files:', err);
-    }
-}
-
-function renderFiles(files, tableSelector) {
-    const tbody = document.querySelector(`${tableSelector} tbody`);
-    tbody.innerHTML = '';
-    const isGroupTable = tableSelector === '#group-files-table';
-    for (const f of files) {
-        const tr = document.createElement('tr');
-        let html = `
-            <td><a href="#" data-id="${f.id}">${escapeHtml(f.name)}</a></td>
-            <td>${f.extension || '-'}</td>
-            <td>${typeBadge(f.file_type)}</td>
-            <td>${formatBytes(f.size_bytes)}</td>
-            <td>${formatDuration(f.duration_seconds)}</td>
-            <td>${f.width && f.height ? f.width + 'x' + f.height : '-'}</td>
-            <td>${f.has_subtitles ? 'Sí' : 'No'}</td>
-        `;
-        if (!isGroupTable) {
-            html += `<td>${escapeHtml(groupName(f.group_id))}</td>`;
-        }
-        tr.innerHTML = html;
-        tr.querySelector('a').addEventListener('click', (e) => {
-            e.preventDefault();
-            showDetail(f.id);
-        });
-        tbody.appendChild(tr);
-    }
-}
-
-function readFilters() {
-    const subs = document.getElementById('filter-subs').value;
-    currentFilters = {
-        name: document.getElementById('filter-name').value || null,
-        extension: document.getElementById('filter-ext').value || null,
-        file_type: document.getElementById('filter-file-type').value || null,
-        min_size: document.getElementById('filter-min').value || null,
-        max_size: document.getElementById('filter-max').value || null,
-        has_subtitles: subs === '' ? null : subs === 'true',
-        group_id: document.getElementById('filter-group').value || null,
-        modified_after: document.getElementById('filter-after').value || null,
-        modified_before: document.getElementById('filter-before').value || null,
-        sort_by: document.getElementById('filter-sort-by').value || null,
-        sort_order: document.getElementById('filter-sort-order').value || null,
-    };
-    currentOffset = 0;
-}
-
-async function loadFilterOptions() {
-    try {
-        const res = await fetch('/api/extensions');
-        const payload = await res.json();
-        const select = document.getElementById('filter-ext');
-        const current = select.value;
-        select.innerHTML = '<option value="">Cualquier extensión</option>';
-        for (const ext of payload.data || []) {
-            const opt = document.createElement('option');
-            opt.value = ext;
-            opt.textContent = ext;
-            select.appendChild(opt);
-        }
-        select.value = current;
-    } catch (err) {
-        console.error('Error loading extensions:', err);
-    }
-
-    try {
-        const res = await fetch('/api/file-types');
-        const payload = await res.json();
-        const select = document.getElementById('filter-file-type');
-        const current = select.value;
-        select.innerHTML = '<option value="">Cualquier tipo</option>';
-        for (const ft of payload.data || []) {
-            const opt = document.createElement('option');
-            opt.value = ft;
-            opt.textContent = ft;
-            select.appendChild(opt);
-        }
-        select.value = current;
-    } catch (err) {
-        console.error('Error loading file types:', err);
-    }
-}
-
-async function loadGroups() {
-    const kind = document.getElementById('filter-group-kind').value || null;
-    const params = new URLSearchParams();
-    if (kind) params.set('kind', kind);
-    try {
-        const res = await fetch('/api/groups?' + params.toString());
-        const data = await res.json();
-        const groups = data.data || [];
-        renderGroups(groups);
-        updateGroupDropdown(groups);
-    } catch (err) {
-        console.error('Error loading groups:', err);
-    }
-}
-
-function updateGroupDropdown(groups) {
-    groupsMap.clear();
-    for (const g of groups) {
-        groupsMap.set(g.id, g.name);
-    }
-    const select = document.getElementById('filter-group');
-    const current = select.value;
-    select.innerHTML = '<option value="">Cualquier grupo</option>';
-    for (const g of groups) {
-        const opt = document.createElement('option');
-        opt.value = g.id;
-        opt.textContent = g.name;
-        select.appendChild(opt);
-    }
-    select.value = current;
-}
-
-function renderGroups(groups) {
-    const grid = document.getElementById('groups-grid');
-    grid.innerHTML = '';
-    if (groups.length === 0) {
-        grid.innerHTML = '<p class="empty">No hay grupos.</p>';
-        return;
-    }
-    for (const g of groups) {
-        const card = document.createElement('div');
-        card.className = 'group-card';
-        card.innerHTML = `
-            <h4>${escapeHtml(g.name)}</h4>
-            <span class="badge kind-${g.kind}">${escapeHtml(g.kind || 'otro')}</span>
-            <p>${g.file_count ?? 0} archivo(s)</p>
-        `;
-        card.addEventListener('click', () => showGroupFiles(g.id));
-        grid.appendChild(card);
-    }
-}
-
-async function showGroupFiles(groupId) {
-    try {
-        const res = await fetch('/api/groups/' + groupId + '/files');
-        const data = await res.json();
-        renderFiles(data.data || [], '#group-files-table');
-        document.getElementById('group-files').classList.remove('hidden');
-        document.getElementById('group-files').scrollIntoView({ behavior: 'smooth' });
-    } catch (err) {
-        console.error('Error loading group files:', err);
-    }
-}
-
+/** Renderiza el extra_json de un archivo como lista clave-valor. */
 function renderExtraJson(extraJson) {
     if (!extraJson) return '<p class="muted">No hay metadatos adicionales.</p>';
     try {
@@ -330,7 +241,7 @@ function renderExtraJson(extraJson) {
             return dl.outerHTML;
         }
     } catch (_) {
-        // fall through to plain text fallback
+        // fall through
     }
     return `<p class="muted">Metadatos adicionales no estructurados.</p><pre class="raw-meta">${escapeHtml(extraJson)}</pre>`;
 }
@@ -341,67 +252,454 @@ function formatExtraValue(value) {
     return String(value);
 }
 
-async function showDetail(id) {
-    selectedFileId = id;
+// ============================================================
+// 5. NAVEGACIÓN PRINCIPAL
+// ============================================================
+
+/** Cambia a la vista solicitada y recarga sus datos. */
+function switchView(view) {
+    currentView = view;
+
+    // Actualiza sidebar
+    document.querySelectorAll('.nav-item').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.view === view);
+    });
+
+    // Actualiza vistas
+    document.querySelectorAll('.view').forEach(el => {
+        el.classList.toggle('active', el.id === `view-${view}`);
+    });
+
+    const titles = {
+        dashboard: 'Dashboard',
+        files: 'Archivos',
+        groups: 'Grupos',
+        reorganize: 'Reorganizar',
+    };
+    setPageTitle(titles[view] || view);
+
+    if (view === 'dashboard') renderDashboard();
+    if (view === 'files') renderFiles();
+    if (view === 'groups') renderGroups();
+    if (view === 'reorganize') renderReorganize();
+}
+
+// ============================================================
+// 6. VISTA DASHBOARD
+// ============================================================
+
+async function renderDashboard() {
     try {
-        const res = await fetch('/api/files/' + id);
-        if (!res.ok) throw new Error('File not found');
-        const payload = await res.json();
+        const stats = await apiGet('/api/stats');
+        const cards = document.getElementById('dashboard-cards');
+        cards.innerHTML = '';
+        cards.appendChild(StatCard({ icon: '📁', value: stats.total_files ?? 0, label: 'Archivos indexados' }));
+        cards.appendChild(StatCard({ icon: '🎬', value: stats.video_files ?? 0, label: 'Videos' }));
+        cards.appendChild(StatCard({ icon: '🎵', value: stats.audio_files ?? 0, label: 'Audio' }));
+        cards.appendChild(StatCard({ icon: '📄', value: stats.pdf_files ?? 0, label: 'PDFs' }));
+        cards.appendChild(StatCard({ icon: '🗜️', value: stats.archive_files ?? 0, label: 'Archivos comprimidos' }));
+        cards.appendChild(StatCard({ icon: '💾', value: formatBytes(stats.total_size_bytes ?? 0), label: 'Tamaño total' }));
+        cards.appendChild(StatCard({ icon: '🎭', value: stats.group_count ?? 0, label: 'Grupos' }));
+        cards.appendChild(StatCard({ icon: '🕒', value: formatDate(stats.last_scan), label: 'Último escaneo' }));
+    } catch (err) {
+        showToast('No se pudieron cargar las estadísticas: ' + err.message, 'error');
+    }
+
+    try {
+        const payload = await apiGet('/api/stats/by-type');
+        renderTypeChart(payload.data || {});
+    } catch (err) {
+        showToast('No se pudo cargar el breakdown por tipo: ' + err.message, 'error');
+    }
+
+    try {
+        const jobs = await apiGet('/api/scan-jobs');
+        renderScanJobs(jobs);
+    } catch (err) {
+        showToast('No se pudieron cargar los escaneos: ' + err.message, 'error');
+    }
+}
+
+/** Dibuja un gráfico de barras CSS con los conteos por tipo. */
+function renderTypeChart(data) {
+    const chart = document.getElementById('type-chart');
+    chart.innerHTML = '';
+    const types = ['video', 'audio', 'pdf', 'archive', 'unknown'];
+    const colors = {
+        video: '#22d3ee',
+        audio: '#a78bfa',
+        pdf: '#fbbf24',
+        archive: '#34d399',
+        unknown: '#94a3b8',
+    };
+    const max = Math.max(...types.map(t => data[t] ?? 0), 1);
+
+    for (const type of types) {
+        const value = data[type] ?? 0;
+        const pct = (value / max) * 100;
+        const item = document.createElement('div');
+        item.className = 'bar-item';
+        item.innerHTML = `
+            <div class="bar-value">${value}</div>
+            <div class="bar-track">
+                <div class="bar-fill" style="height: ${pct}%; background: ${colors[type]}"></div>
+            </div>
+            <div class="bar-label">${type}</div>
+        `;
+        chart.appendChild(item);
+    }
+}
+
+function renderScanJobs(jobs) {
+    const rows = (jobs || []).slice(0, 10).map(j => `
+        <td><span class="badge status-${j.status}">${escapeHtml(j.status)}</span></td>
+        <td>${formatDate(j.started_at)}</td>
+        <td>${formatDate(j.finished_at)}</td>
+        <td title="${escapeHtml(j.root_path)}">${escapeHtml(j.root_path)}</td>
+        <td>${j.files_found ?? 0}</td>
+        <td>${j.files_indexed ?? 0}</td>
+        <td>${j.errors ?? 0}</td>
+    `);
+    renderTable('#scan-jobs-table', rows);
+}
+
+// ============================================================
+// 7. VISTA ARCHIVOS
+// ============================================================
+
+async function renderFiles() {
+    await loadFilterOptions();
+    await applyFileFilters();
+}
+
+/** Carga extensiones y grupos disponibles para los selects. */
+async function loadFilterOptions() {
+    try {
+        const payload = await apiGet('/api/extensions');
+        fillSelect('filter-ext', payload.data || [], 'Cualquier extensión');
+    } catch (err) {
+        showToast('No se pudieron cargar extensiones', 'error');
+    }
+
+    try {
+        const payload = await apiGet('/api/groups');
+        const groups = payload.data || [];
+        groupsMap.clear();
+        for (const g of groups) groupsMap.set(String(g.id), g.name);
+        fillSelect('filter-group', groups.map(g => ({ value: g.id, label: g.name })), 'Cualquier grupo');
+    } catch (err) {
+        showToast('No se pudieron cargar grupos', 'error');
+    }
+}
+
+/** Rellena un <select> conservando la selección actual. */
+function fillSelect(id, options, defaultLabel) {
+    const select = document.getElementById(id);
+    const current = select.value;
+    select.innerHTML = `<option value="">${escapeHtml(defaultLabel)}</option>`;
+    for (const opt of options) {
+        const value = typeof opt === 'string' ? opt : opt.value;
+        const label = typeof opt === 'string' ? opt : opt.label;
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = label;
+        select.appendChild(option);
+    }
+    select.value = current;
+}
+
+/** Lee los filtros de la UI y reinicia la paginación. */
+function readFileFilters() {
+    const subs = document.getElementById('filter-subs').value;
+    fileFilters = {
+        name: document.getElementById('filter-name').value || null,
+        extension: document.getElementById('filter-ext').value || null,
+        file_type: fileFilters.file_type, // controlado por chips
+        min_size: document.getElementById('filter-min').value || null,
+        max_size: document.getElementById('filter-max').value || null,
+        has_subtitles: subs === '' ? null : subs === 'true',
+        group_id: document.getElementById('filter-group').value || null,
+        modified_after: document.getElementById('filter-after').value || null,
+        modified_before: document.getElementById('filter-before').value || null,
+        sort_by: document.getElementById('filter-sort-by').value || 'name',
+        sort_order: document.getElementById('filter-sort-order').value || 'asc',
+    };
+    filePage.offset = 0;
+}
+
+/** Construye los parámetros de consulta para /api/files. */
+function buildFileParams() {
+    const params = new URLSearchParams();
+    params.set('limit', filePage.size);
+    params.set('offset', filePage.offset);
+    for (const [key, value] of Object.entries(fileFilters)) {
+        if (value != null && value !== '') params.set(key, value);
+    }
+    return params;
+}
+
+/** Carga conteo y listado de archivos. */
+async function applyFileFilters() {
+    const params = buildFileParams();
+
+    // Conteo
+    const countParams = new URLSearchParams(params);
+    countParams.delete('limit');
+    countParams.delete('offset');
+    try {
+        const data = await apiGet('/api/files/count?' + countParams.toString());
+        filePage.count = data.count || 0;
+    } catch (err) {
+        showToast('Error al contar archivos: ' + err.message, 'error');
+        filePage.count = 0;
+    }
+
+    // Listado
+    try {
+        const data = await apiGet('/api/files?' + params.toString());
+        renderFileRows(data.data || []);
+    } catch (err) {
+        showToast('Error al cargar archivos: ' + err.message, 'error');
+        renderFileRows([]);
+    }
+
+    updateFilePagination();
+}
+
+/** Renderiza filas de archivos incluyendo acciones. */
+function renderFileRows(files) {
+    const tbody = document.querySelector('#files-table tbody');
+    const empty = document.getElementById('files-empty');
+    const table = document.getElementById('files-table');
+
+    tbody.innerHTML = '';
+
+    if (files.length === 0) {
+        table.classList.add('hidden');
+        empty.classList.remove('hidden');
+        return;
+    }
+
+    table.classList.remove('hidden');
+    empty.classList.add('hidden');
+
+    for (const f of files) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><a href="#" data-id="${f.id}" title="Ver detalle">${escapeHtml(f.name)}</a></td>
+            <td>${typeBadge(f.file_type)}</td>
+            <td>${f.extension || '-'}</td>
+            <td>${formatBytes(f.size_bytes)}</td>
+            <td>${formatDuration(f.duration_seconds)}</td>
+            <td>${f.width && f.height ? f.width + 'x' + f.height : '-'}</td>
+            <td>${f.has_subtitles ? '✅' : '—'}</td>
+            <td>${escapeHtml(groupName(f.group_id))}</td>
+            <td>
+                <button class="btn-small btn-primary" data-id="${f.id}">Ver detalle</button>
+                <button class="btn-small btn-secondary" data-notes="${f.id}">Historial</button>
+            </td>
+        `;
+        tr.querySelector('a').addEventListener('click', e => {
+            e.preventDefault();
+            openFileModal(f.id);
+        });
+        tr.querySelector('[data-id]').addEventListener('click', () => openFileModal(f.id));
+        tr.querySelector('[data-notes]').addEventListener('click', () => {
+            openFileModal(f.id);
+            switchModalTab('notes');
+        });
+        tbody.appendChild(tr);
+    }
+}
+
+/** Actualiza texto y botones de paginación. */
+function updateFilePagination() {
+    const start = filePage.count === 0 ? 0 : filePage.offset + 1;
+    const end = Math.min(filePage.offset + filePage.size, filePage.count);
+    document.getElementById('results-count').textContent = `Total: ${filePage.count} archivo(s)`;
+    document.getElementById('page-info').textContent = `Mostrando ${start}-${end} de ${filePage.count}`;
+    document.getElementById('btn-prev').disabled = filePage.offset === 0;
+    document.getElementById('btn-next').disabled = filePage.offset + filePage.size >= filePage.count;
+}
+
+/** Limpia todos los filtros visuales. */
+function clearFileFilters() {
+    document.getElementById('filter-name').value = '';
+    document.getElementById('filter-ext').value = '';
+    document.getElementById('filter-subs').value = '';
+    document.getElementById('filter-group').value = '';
+    document.getElementById('filter-min').value = '';
+    document.getElementById('filter-max').value = '';
+    document.getElementById('filter-after').value = '';
+    document.getElementById('filter-before').value = '';
+    document.getElementById('filter-sort-by').value = 'name';
+    document.getElementById('filter-sort-order').value = 'asc';
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    document.querySelector('.chip[data-type=""]').classList.add('active');
+    fileFilters.file_type = null;
+    readFileFilters();
+    applyFileFilters();
+}
+
+// ============================================================
+// 8. VISTA GRUPOS
+// ============================================================
+
+async function renderGroups() {
+    const kind = document.getElementById('filter-group-kind').value || null;
+    try {
+        const params = new URLSearchParams();
+        if (kind) params.set('kind', kind);
+        const payload = await apiGet('/api/groups?' + params.toString());
+        const groups = payload.data || [];
+        // Mantenemos el mapa de grupos actualizado para mostrar nombres en otras vistas.
+        groupsMap.clear();
+        for (const g of groups) groupsMap.set(String(g.id), g.name);
+        renderGroupCards(groups);
+        document.getElementById('groups-count').textContent = `${groups.length} grupo(s)`;
+    } catch (err) {
+        showToast('Error al cargar grupos: ' + err.message, 'error');
+    }
+}
+
+function renderGroupCards(groups) {
+    const grid = document.getElementById('groups-grid');
+    const empty = document.getElementById('groups-empty');
+    grid.innerHTML = '';
+
+    if (groups.length === 0) {
+        empty.classList.remove('hidden');
+        return;
+    }
+    empty.classList.add('hidden');
+
+    for (const g of groups) {
+        const card = document.createElement('div');
+        card.className = 'group-card';
+        card.innerHTML = `
+            <span class="group-icon">${groupIcon(g.kind)}</span>
+            <h4>${escapeHtml(g.name)}</h4>
+            <span class="badge kind-${g.kind}">${escapeHtml(g.kind || 'other')}</span>
+            <p>${g.file_count ?? 0} archivo(s)</p>
+        `;
+        card.addEventListener('click', () => showGroupFiles(g.id, g.name));
+        grid.appendChild(card);
+    }
+}
+
+async function showGroupFiles(groupId, groupNameLabel) {
+    try {
+        const payload = await apiGet('/api/groups/' + groupId + '/files');
+        const files = payload.data || [];
+        document.getElementById('group-files-title').textContent = `Archivos del grupo: ${escapeHtml(groupNameLabel || '')}`;
+        renderGroupFileRows(files);
+        const panel = document.getElementById('group-files-panel');
+        panel.classList.remove('hidden');
+        panel.scrollIntoView({ behavior: 'smooth' });
+    } catch (err) {
+        showToast('Error al cargar archivos del grupo: ' + err.message, 'error');
+    }
+}
+
+function renderGroupFileRows(files) {
+    const rows = files.map(f => `
+        <td><a href="#" data-id="${f.id}">${escapeHtml(f.name)}</a></td>
+        <td>${typeBadge(f.file_type)}</td>
+        <td>${f.extension || '-'}</td>
+        <td>${formatBytes(f.size_bytes)}</td>
+        <td>${formatDuration(f.duration_seconds)}</td>
+        <td>${f.width && f.height ? f.width + 'x' + f.height : '-'}</td>
+        <td>${f.has_subtitles ? '✅' : '—'}</td>
+    `);
+    renderTable('#group-files-table', rows);
+    document.querySelectorAll('#group-files-table tbody a').forEach(a => {
+        a.addEventListener('click', e => {
+            e.preventDefault();
+            openFileModal(Number(a.dataset.id));
+        });
+    });
+}
+
+// ============================================================
+// 9. MODAL DE DETALLE DE ARCHIVO
+// ============================================================
+
+function openFileModal(id) {
+    selectedFileId = id;
+    loadFileDetail(id);
+    document.getElementById('file-modal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeFileModal() {
+    document.getElementById('file-modal').classList.add('hidden');
+    document.body.style.overflow = '';
+    selectedFileId = null;
+}
+
+function switchModalTab(tab) {
+    document.querySelectorAll('.modal-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.tab === tab);
+    });
+    document.querySelectorAll('.modal-panel').forEach(p => {
+        p.classList.toggle('active', p.id === `tab-${tab}`);
+    });
+}
+
+async function loadFileDetail(id) {
+    try {
+        const payload = await apiGet('/api/files/' + id);
         const f = payload.data;
 
-        const main = document.getElementById('detail-main');
-        main.innerHTML = `
-            <h4>Información general</h4>
-            <p><strong>Ruta:</strong> <span title="${escapeHtml(f.path)}">${escapeHtml(f.path)}</span></p>
-            <p><strong>Nombre:</strong> ${escapeHtml(f.name)}</p>
-            <p><strong>Extensión:</strong> ${f.extension || '-'}</p>
-            <p><strong>Tipo:</strong> ${typeBadge(f.file_type)}</p>
-            <p><strong>Tamaño:</strong> ${formatBytes(f.size_bytes)}</p>
-            <p><strong>Modificado:</strong> ${formatDate(f.modified_at)}</p>
-            <p><strong>Escaneado:</strong> ${formatDate(f.scanned_at)}</p>
-            <p><strong>Grupo:</strong> ${escapeHtml(groupName(f.group_id))}</p>
-            <h4>Técnicos</h4>
-            <p><strong>Duración:</strong> ${formatDuration(f.duration_seconds)}</p>
-            <p><strong>Resolución:</strong> ${f.width && f.height ? f.width + 'x' + f.height : '-'}</p>
-            <p><strong>Códec vídeo:</strong> ${f.video_codec || '-'}</p>
-            <p><strong>Códec audio:</strong> ${f.audio_codec || '-'}</p>
-            <p><strong>Pistas de audio:</strong> ${f.audio_tracks || '-'}</p>
-            <p><strong>Pistas de subtítulos:</strong> ${f.subtitle_tracks || '-'}</p>
-            <p><strong>Subtítulos:</strong> ${f.has_subtitles ? 'Sí' : 'No'}</p>
+        document.getElementById('modal-file-name').textContent = f.name;
+        document.getElementById('modal-file-badges').innerHTML = `
+            ${typeBadge(f.file_type)}
+            <span class="badge">${formatBytes(f.size_bytes)}</span>
         `;
 
-        const extra = document.getElementById('detail-extra');
-        extra.innerHTML = '<h4>Metadatos adicionales</h4>' + renderExtraJson(f.extra_json);
+        const general = document.getElementById('detail-general');
+        general.innerHTML = `
+            <div class="detail-item"><strong>Ruta</strong><span title="${escapeHtml(f.path)}">${escapeHtml(f.path)}</span></div>
+            <div class="detail-item"><strong>Nombre</strong><span>${escapeHtml(f.name)}</span></div>
+            <div class="detail-item"><strong>Extensión</strong><span>${f.extension || '-'}</span></div>
+            <div class="detail-item"><strong>Tamaño</strong><span>${formatBytes(f.size_bytes)}</span></div>
+            <div class="detail-item"><strong>Modificado</strong><span>${formatDate(f.modified_at)}</span></div>
+            <div class="detail-item"><strong>Indexado</strong><span>${formatDate(f.scanned_at)}</span></div>
+            <div class="detail-item"><strong>Grupo</strong><span>${escapeHtml(groupName(f.group_id))}</span></div>
+            <div class="detail-item"><strong>Duración</strong><span>${formatDuration(f.duration_seconds)}</span></div>
+            <div class="detail-item"><strong>Resolución</strong><span>${f.width && f.height ? f.width + 'x' + f.height : '-'}</span></div>
+            <div class="detail-item"><strong>Códec vídeo</strong><span>${f.video_codec || '-'}</span></div>
+            <div class="detail-item"><strong>Códec audio</strong><span>${f.audio_codec || '-'}</span></div>
+            <div class="detail-item"><strong>Pistas audio</strong><span>${f.audio_tracks || '-'}</span></div>
+            <div class="detail-item"><strong>Pistas subtítulos</strong><span>${f.subtitle_tracks || '-'}</span></div>
+            <div class="detail-item"><strong>Subtítulos</strong><span>${f.has_subtitles ? 'Sí' : 'No'}</span></div>
+        `;
 
-        document.getElementById('detail-notes').innerHTML = f.notes
-            ? `<div class="note-content">${escapeHtml(f.notes)}</div>`
-            : '<p class="muted">Sin notas.</p>';
+        document.getElementById('detail-extra').innerHTML = renderExtraJson(f.extra_json);
         document.getElementById('note-input').value = f.notes || '';
 
-        document.getElementById('detail').classList.remove('hidden');
-        document.getElementById('detail').scrollIntoView({ behavior: 'smooth' });
-
-        await loadFileTags(id);
-        await loadNotesHistory(id);
+        await Promise.all([
+            loadFileTags(id),
+            loadNotesHistory(id),
+        ]);
     } catch (err) {
-        console.error('Error loading detail:', err);
+        showToast('Error al cargar detalle: ' + err.message, 'error');
     }
 }
 
 async function loadFileTags(fileId) {
     try {
-        const res = await fetch('/api/files/' + fileId + '/tags');
-        const tags = await res.json();
+        const tags = await apiGet('/api/files/' + fileId + '/tags');
         renderTags(tags);
     } catch (err) {
-        console.error('Error loading tags:', err);
+        showToast('Error al cargar tags: ' + err.message, 'error');
     }
 }
 
 function renderTags(tags) {
     const container = document.getElementById('detail-tags');
     container.innerHTML = '';
-    if (!tags.length) {
+    if (!tags || tags.length === 0) {
         container.innerHTML = '<p class="muted">Sin etiquetas.</p>';
         return;
     }
@@ -420,48 +718,39 @@ async function addTag() {
     const name = input.value.trim();
     if (!name) return;
     try {
-        const res = await fetch('/api/files/' + selectedFileId + '/tags', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name })
-        });
-        if (!res.ok) throw new Error('Failed to add tag');
+        await apiPost('/api/files/' + selectedFileId + '/tags', { name });
         input.value = '';
         await loadFileTags(selectedFileId);
+        showToast('Etiqueta añadida', 'success');
     } catch (err) {
-        console.error('Error adding tag:', err);
-        alert('Error al añadir etiqueta');
+        showToast('Error al añadir etiqueta: ' + err.message, 'error');
     }
 }
 
 async function removeTag(tagId) {
     if (selectedFileId == null) return;
     try {
-        const res = await fetch('/api/files/' + selectedFileId + '/tags/' + tagId, {
-            method: 'DELETE'
-        });
-        if (!res.ok) throw new Error('Failed to remove tag');
+        await apiDelete('/api/files/' + selectedFileId + '/tags/' + tagId);
         await loadFileTags(selectedFileId);
+        showToast('Etiqueta eliminada', 'success');
     } catch (err) {
-        console.error('Error removing tag:', err);
-        alert('Error al eliminar etiqueta');
+        showToast('Error al eliminar etiqueta: ' + err.message, 'error');
     }
 }
 
 async function loadNotesHistory(fileId) {
     try {
-        const res = await fetch('/api/files/' + fileId + '/notes');
-        const notes = await res.json();
-        renderNotesHistory(notes);
+        const payload = await apiGet('/api/files/' + fileId + '/notes');
+        renderNotesHistory(payload.data || []);
     } catch (err) {
-        console.error('Error loading notes history:', err);
+        showToast('Error al cargar historial de notas: ' + err.message, 'error');
     }
 }
 
 function renderNotesHistory(notes) {
     const container = document.getElementById('notes-history');
     container.innerHTML = '';
-    if (!notes.length) {
+    if (notes.length === 0) {
         container.innerHTML = '<p class="muted">Sin historial de notas.</p>';
         return;
     }
@@ -470,8 +759,9 @@ function renderNotesHistory(notes) {
     for (const n of notes) {
         const li = document.createElement('li');
         li.innerHTML = `
-            <div class="note-meta">${formatDate(n.created_at)}
-                <button data-id="${n.id}" class="btn-small btn-danger">Eliminar</button>
+            <div class="note-meta">
+                <span>${formatDate(n.created_at)}</span>
+                <button class="btn-small btn-danger" data-id="${n.id}">Eliminar</button>
             </div>
             <div class="note-text">${escapeHtml(n.content)}</div>
         `;
@@ -484,14 +774,11 @@ function renderNotesHistory(notes) {
 async function deleteNote(noteId) {
     if (!confirm('¿Eliminar esta nota del historial?')) return;
     try {
-        const res = await fetch('/api/notes/' + noteId, { method: 'DELETE' });
-        if (!res.ok) throw new Error('Failed to delete note');
-        if (selectedFileId != null) {
-            await loadNotesHistory(selectedFileId);
-        }
+        await apiDelete('/api/notes/' + noteId);
+        if (selectedFileId != null) await loadNotesHistory(selectedFileId);
+        showToast('Nota eliminada', 'success');
     } catch (err) {
-        console.error('Error deleting note:', err);
-        alert('Error al eliminar nota');
+        showToast('Error al eliminar nota: ' + err.message, 'error');
     }
 }
 
@@ -499,152 +786,221 @@ async function saveNote() {
     if (selectedFileId == null) return;
     const content = document.getElementById('note-input').value;
     try {
-        const res = await fetch('/api/files/' + selectedFileId + '/notes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content })
-        });
-        if (!res.ok) throw new Error('Failed to save note');
-        document.getElementById('detail-notes').innerHTML = content
-            ? `<div class="note-content">${escapeHtml(content)}</div>`
-            : '<p class="muted">Sin notas.</p>';
+        await apiPost('/api/files/' + selectedFileId + '/notes', { content });
         await loadNotesHistory(selectedFileId);
+        showToast('Nota guardada', 'success');
     } catch (err) {
-        console.error('Error saving note:', err);
-        alert('Error al guardar la nota');
+        showToast('Error al guardar nota: ' + err.message, 'error');
     }
 }
 
-document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
-});
+// ============================================================
+// 10. VISTA REORGANIZAR (wizard)
+// ============================================================
 
-document.getElementById('btn-search').addEventListener('click', () => {
-    readFilters();
-    loadFiles();
-});
-
-document.getElementById('btn-prev').addEventListener('click', () => {
-    if (currentOffset >= pageSize) {
-        currentOffset -= pageSize;
-        loadFiles();
-    }
-});
-
-document.getElementById('btn-next').addEventListener('click', () => {
-    if (currentOffset + pageSize < fileCount) {
-        currentOffset += pageSize;
-        loadFiles();
-    }
-});
-
-document.getElementById('btn-filter-groups').addEventListener('click', loadGroups);
-document.getElementById('btn-save-note').addEventListener('click', saveNote);
-document.getElementById('btn-add-tag').addEventListener('click', addTag);
-document.getElementById('tag-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') addTag();
-});
-
-// Reorganize tab
-document.getElementById('reorg-strategy').addEventListener('change', updateReorgTemplate);
-document.getElementById('btn-reorg-plan').addEventListener('click', createReorgPlan);
-document.getElementById('btn-reorg-apply').addEventListener('click', applyReorgPlan);
-document.getElementById('btn-reorg-rollback').addEventListener('click', rollbackReorgPlan);
-
-loadDashboard();
-loadGroups();
-loadFilterOptions();
-loadReorganizeTab();
-
-let reorgStrategies = [];
-let currentReorgJobId = null;
-
-async function loadReorganizeTab() {
+async function renderReorganize() {
+    // Cargamos grupos primero para que la vista previa de plantillas pueda usar nombres reales.
+    await loadGroupsMap();
     await loadReorgStrategies();
     await loadReorgFilterOptions();
     await loadSystemStorage();
 }
 
-async function loadReorgStrategies() {
+/** Carga todos los grupos y actualiza el mapa id -> nombre. */
+async function loadGroupsMap() {
     try {
-        const res = await fetch('/api/reorganize/strategies');
-        const data = await res.json();
-        reorgStrategies = data.strategies || [];
-        updateReorgTemplate();
+        const payload = await apiGet('/api/groups');
+        const groups = payload.data || [];
+        groupsMap.clear();
+        for (const g of groups) groupsMap.set(String(g.id), g.name);
     } catch (err) {
-        console.error('Error loading reorg strategies:', err);
+        console.error('Error cargando grupos:', err);
     }
 }
 
-function updateReorgTemplate() {
-    const strategy = document.getElementById('reorg-strategy').value;
-    const entry = reorgStrategies.find(s => s.id === strategy);
+async function loadReorgStrategies() {
+    try {
+        const data = await apiGet('/api/reorganize/strategies');
+        reorgStrategies = data.strategies || [];
+        renderStrategyCards();
+        renderTokenHelp(data.tokens || []);
+    } catch (err) {
+        showToast('Error al cargar estrategias: ' + err.message, 'error');
+    }
+}
+
+function renderStrategyCards() {
+    const grid = document.getElementById('strategy-grid');
+    grid.innerHTML = '';
+    const descriptions = {
+        'by-type': 'Crea carpetas por tipo de archivo: video, audio, pdf...',
+        'by-group': 'Usa el grupo detectado (serie, película, colección).',
+        'by-date': 'Organiza por año y mes de modificación.',
+        'by-tag': 'Agrupa archivos según su etiqueta asignada.',
+        'custom': 'Tú eliges la plantilla y la estructura final.',
+    };
+    const examples = {
+        'by-type': '{file_type}/{name}.{ext}',
+        'by-group': '{group_kind}/{group_name}/{name}.{ext}',
+        'by-date': '{year}/{month}/{name}.{ext}',
+        'by-tag': '{tag}/{name}.{ext}',
+        'custom': '{file_type}/{name}.{ext}',
+    };
+    for (const s of reorgStrategies) {
+        const card = document.createElement('div');
+        card.className = 'strategy-card';
+        card.dataset.strategy = s.id;
+        card.innerHTML = `
+            <h4>${escapeHtml(s.name)}</h4>
+            <p>${descriptions[s.id] || ''}</p>
+            <code>${escapeHtml(examples[s.id] || s.template)}</code>
+        `;
+        card.addEventListener('click', () => selectReorgStrategy(s.id));
+        grid.appendChild(card);
+    }
+    if (selectedReorgStrategy) highlightStrategy(selectedReorgStrategy);
+}
+
+function renderTokenHelp(tokens) {
+    const help = document.querySelector('.token-help');
+    if (!help || !tokens.length) return;
+    help.innerHTML = '<strong>Tokens disponibles:</strong> ' +
+        tokens.map(t => `<code>${escapeHtml(t)}</code>`).join('');
+}
+
+function selectReorgStrategy(id) {
+    selectedReorgStrategy = id;
+    highlightStrategy(id);
+    const entry = reorgStrategies.find(s => s.id === id);
     if (entry && entry.template) {
         document.getElementById('reorg-template').value = entry.template;
     }
+    updatePathPreview();
+}
+
+function highlightStrategy(id) {
+    document.querySelectorAll('.strategy-card').forEach(c => {
+        c.classList.toggle('selected', c.dataset.strategy === id);
+    });
 }
 
 async function loadReorgFilterOptions() {
     try {
-        const res = await fetch('/api/file-types');
-        const payload = await res.json();
-        const select = document.getElementById('reorg-filter-type');
-        const current = select.value;
-        select.innerHTML = '<option value="">Cualquiera</option>';
-        for (const ft of payload.data || []) {
-            const opt = document.createElement('option');
-            opt.value = ft;
-            opt.textContent = ft;
-            select.appendChild(opt);
-        }
-        select.value = current;
+        const types = await apiGet('/api/file-types');
+        fillSelect('reorg-filter-type', types.data || [], 'Cualquiera');
     } catch (err) {
-        console.error('Error loading reorg file types:', err);
+        showToast('Error al cargar tipos', 'error');
     }
-
     try {
-        const res = await fetch('/api/extensions');
-        const payload = await res.json();
-        const select = document.getElementById('reorg-filter-ext');
-        const current = select.value;
-        select.innerHTML = '<option value="">Cualquiera</option>';
-        for (const ext of payload.data || []) {
-            const opt = document.createElement('option');
-            opt.value = ext;
-            opt.textContent = ext;
-            select.appendChild(opt);
-        }
-        select.value = current;
+        const exts = await apiGet('/api/extensions');
+        fillSelect('reorg-filter-ext', exts.data || [], 'Cualquiera');
     } catch (err) {
-        console.error('Error loading reorg extensions:', err);
+        showToast('Error al cargar extensiones', 'error');
     }
-
     try {
-        const res = await fetch('/api/tags');
-        const tags = await res.json();
-        const select = document.getElementById('reorg-filter-tag');
-        const current = select.value;
-        select.innerHTML = '<option value="">Cualquiera</option>';
-        for (const t of tags || []) {
-            const opt = document.createElement('option');
-            opt.value = t.id;
-            opt.textContent = t.name;
-            select.appendChild(opt);
-        }
-        select.value = current;
+        const tags = await apiGet('/api/tags');
+        fillSelect('reorg-filter-tag', (tags || []).map(t => ({ value: t.id, label: t.name })), 'Cualquiera');
     } catch (err) {
-        console.error('Error loading reorg tags:', err);
+        showToast('Error al cargar etiquetas', 'error');
     }
 }
 
+async function loadSystemStorage() {
+    try {
+        const payload = await apiGet('/api/system/storage');
+        const disks = payload.data || [];
+        const rows = disks.map(d => `
+            <td>${escapeHtml(d.name)}</td>
+            <td>${escapeHtml(d.mount_point)}</td>
+            <td>${formatBytes(d.total_bytes)}</td>
+            <td>${formatBytes(d.free_bytes)}</td>
+            <td>${formatBytes(d.used_bytes)}</td>
+        `);
+        renderTable('#system-storage-table', rows);
+    } catch (err) {
+        showToast('Error al cargar discos: ' + err.message, 'error');
+    }
+}
+
+/**
+ * Genera una vista previa de ruta usando un archivo real de ejemplo.
+ * Solo es ilustrativa; el backend decide la ruta final al planificar.
+ */
+async function updatePathPreview() {
+    const preview = document.getElementById('reorg-path-preview');
+    const template = document.getElementById('reorg-template').value;
+    const targetRoot = document.getElementById('reorg-target-root').value;
+
+    if (!selectedReorgStrategy || !template) {
+        preview.textContent = 'Selecciona una estrategia y rellena los campos para ver un ejemplo.';
+        return;
+    }
+
+    // Pedimos un archivo de ejemplo aplicando los filtros actuales
+    const params = new URLSearchParams();
+    params.set('limit', '1');
+    const fileType = document.getElementById('reorg-filter-type').value;
+    const extension = document.getElementById('reorg-filter-ext').value;
+    if (fileType) params.set('file_type', fileType);
+    if (extension) params.set('extension', extension);
+
+    try {
+        const data = await apiGet('/api/files?' + params.toString());
+        const files = data.data || [];
+        if (files.length === 0) {
+            preview.textContent = `${targetRoot || 'D:/Organizado'}/${template}`;
+            return;
+        }
+        const f = files[0];
+        const group = groupsMap.get(String(f.group_id));
+        const date = new Date(f.modified_at || Date.now());
+        const tokens = {
+            '{file_type}': f.file_type || 'unknown',
+            '{extension}': f.extension || 'bin',
+            '{name}': f.name.replace(/\.[^.]+$/, '') || 'archivo',
+            '{ext}': f.extension || 'bin',
+            '{group_name}': group || 'sin-grupo',
+            '{group_kind}': 'collection',
+            '{year}': String(date.getFullYear()),
+            '{month}': String(date.getMonth() + 1).padStart(2, '0'),
+            '{day}': String(date.getDate()).padStart(2, '0'),
+            '{tag}': 'etiqueta',
+        };
+        let path = template;
+        for (const [tok, val] of Object.entries(tokens)) {
+            path = path.replaceAll(tok, val);
+        }
+        preview.textContent = `${targetRoot ? targetRoot.replace(/\\/g, '/') + '/' : ''}${path}`;
+    } catch (err) {
+        preview.textContent = 'No se pudo cargar un archivo de ejemplo.';
+    }
+}
+
+/** Avanza a un paso concreto del wizard. */
+function goToStep(step) {
+    document.querySelectorAll('.wizard-step').forEach(el => {
+        const s = Number(el.dataset.step);
+        el.classList.remove('active', 'completed');
+        if (s === step) el.classList.add('active');
+        else if (s < step) el.classList.add('completed');
+    });
+    document.querySelectorAll('.wizard-panel').forEach(el => {
+        el.classList.toggle('active', Number(el.dataset.step) === step);
+    });
+}
+
 async function createReorgPlan() {
+    if (!selectedReorgStrategy) {
+        showToast('Selecciona una estrategia primero', 'warning');
+        return;
+    }
+
     currentReorgJobId = null;
     document.getElementById('btn-reorg-apply').disabled = true;
     document.getElementById('btn-reorg-rollback').disabled = true;
-    document.getElementById('reorg-space-estimate').classList.add('hidden');
 
     const request = {
-        strategy: document.getElementById('reorg-strategy').value,
+        strategy: selectedReorgStrategy,
         template: document.getElementById('reorg-template').value,
         target_root: document.getElementById('reorg-target-root').value,
         allow_cross_volume: document.getElementById('reorg-cross-volume').checked,
@@ -652,54 +1008,18 @@ async function createReorgPlan() {
             file_type: document.getElementById('reorg-filter-type').value || null,
             extension: document.getElementById('reorg-filter-ext').value || null,
             tag_id: document.getElementById('reorg-filter-tag').value ? parseInt(document.getElementById('reorg-filter-tag').value) : null,
-        }
+        },
     };
 
     try {
-        const res = await fetch('/api/reorganize/plan', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(request)
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Plan failed');
+        const data = await apiPost('/api/reorganize/plan', request);
         currentReorgJobId = data.job_id;
         renderSpaceEstimate(data.estimate);
         await loadReorgJobDetail(currentReorgJobId);
-        document.getElementById('reorg-status').textContent = `Plan generado: job #${currentReorgJobId}`;
+        goToStep(3);
+        showToast(`Plan #${currentReorgJobId} generado`, 'success');
     } catch (err) {
-        console.error('Error creating reorg plan:', err);
-        alert('Error al generar el plan: ' + err.message);
-    }
-}
-
-async function loadSystemStorage() {
-    try {
-        const res = await fetch('/api/system/storage');
-        const payload = await res.json();
-        renderSystemStorage(payload.data || []);
-    } catch (err) {
-        console.error('Error loading system storage:', err);
-    }
-}
-
-function renderSystemStorage(disks) {
-    const tbody = document.querySelector('#system-storage-table tbody');
-    tbody.innerHTML = '';
-    if (!disks.length) {
-        tbody.innerHTML = '<tr><td colspan="5" class="muted">No se detectaron discos.</td></tr>';
-        return;
-    }
-    for (const d of disks) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${escapeHtml(d.name)}</td>
-            <td>${escapeHtml(d.mount_point)}</td>
-            <td>${formatBytes(d.total_bytes)}</td>
-            <td>${formatBytes(d.free_bytes)}</td>
-            <td>${formatBytes(d.used_bytes)}</td>
-        `;
-        tbody.appendChild(tr);
+        showToast('Error al generar plan: ' + err.message, 'error');
     }
 }
 
@@ -710,18 +1030,40 @@ function renderSpaceEstimate(estimate) {
         return;
     }
     container.classList.remove('hidden');
-    document.getElementById('reorg-total-bytes').textContent = formatBytes(estimate.total_source_bytes ?? 0);
-    document.getElementById('reorg-extra-bytes').textContent = formatBytes(estimate.extra_bytes_required ?? 0);
-    document.getElementById('reorg-target-total').textContent = formatBytes(estimate.target_total_bytes ?? 0);
-    document.getElementById('reorg-target-free').textContent = formatBytes(estimate.target_free_bytes ?? 0);
-    const used = (estimate.target_total_bytes ?? 0) - (estimate.target_free_bytes ?? 0);
-    document.getElementById('reorg-target-used').textContent = formatBytes(used);
-    document.getElementById('reorg-advice').textContent = estimate.advice || '-';
+
+    const total = estimate.total_source_bytes ?? 0;
+    const extra = estimate.extra_bytes_required ?? 0;
+    const free = estimate.target_free_bytes ?? 0;
+    const targetTotal = estimate.target_total_bytes ?? 0;
+    const used = targetTotal > free ? targetTotal - free : 0;
+
+    document.getElementById('reorg-total-bytes').textContent = formatBytes(total);
+    document.getElementById('reorg-extra-bytes').textContent = formatBytes(extra);
+    document.getElementById('reorg-target-free').textContent = formatBytes(free);
+    document.getElementById('reorg-target-total').textContent = formatBytes(targetTotal);
+
+    // Barra visual
+    const bar = document.getElementById('target-space-bar');
+    bar.innerHTML = '';
+    if (targetTotal > 0) {
+        const usedPct = Math.min((used / targetTotal) * 100, 100);
+        const requiredPct = Math.min((extra / targetTotal) * 100, 100 - usedPct);
+        const freePct = Math.max(0, 100 - usedPct - requiredPct);
+        bar.innerHTML = `
+            <div class="space-used" style="width: ${usedPct}%"></div>
+            <div class="space-required" style="width: ${requiredPct}%"></div>
+            <div class="space-free" style="width: ${freePct}%"></div>
+        `;
+    }
+
+    const adviceBox = document.getElementById('reorg-advice-box');
+    adviceBox.textContent = estimate.advice || 'Sin consejos adicionales.';
+
     const warningsUl = document.getElementById('reorg-warnings');
     warningsUl.innerHTML = '';
     const warnings = estimate.warnings || [];
     if (warnings.length === 0) {
-        warningsUl.innerHTML = '<li class="muted">Sin advertencias.</li>';
+        warningsUl.innerHTML = '<li>✅ Sin advertencias.</li>';
     } else {
         for (const w of warnings) {
             const li = document.createElement('li');
@@ -729,44 +1071,36 @@ function renderSpaceEstimate(estimate) {
             warningsUl.appendChild(li);
         }
     }
-    const insufficient = (estimate.target_free_bytes ?? 0) < (estimate.extra_bytes_required ?? 0);
+
+    const insufficient = free < extra;
     document.getElementById('btn-reorg-apply').disabled = insufficient;
 }
 
 async function loadReorgJobDetail(jobId) {
     try {
-        const res = await fetch(`/api/reorganize/jobs/${jobId}`);
-        const data = await res.json();
-        const operations = data.operations || [];
-        renderReorgOperations(operations);
-        if (data.data && (data.data.status === 'completed' || data.data.status === 'failed')) {
-            document.getElementById('btn-reorg-rollback').disabled = false;
-        }
-    } catch (err) {
-        console.error('Error loading reorg job detail:', err);
-    }
-}
-
-function renderReorgOperations(operations) {
-    const container = document.getElementById('reorg-preview');
-    const tbody = document.querySelector('#reorg-operations-table tbody');
-    tbody.innerHTML = '';
-    if (!operations.length) {
-        container.classList.add('hidden');
-        return;
-    }
-    container.classList.remove('hidden');
-    for (const op of operations) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
+        const data = await apiGet('/api/reorganize/jobs/' + jobId);
+        const ops = data.operations || [];
+        const rows = ops.map(op => `
             <td><span class="badge status-${op.status}">${escapeHtml(op.status)}</span></td>
             <td>${escapeHtml(op.action)}</td>
             <td title="${escapeHtml(op.source_path)}">${escapeHtml(op.source_path)}</td>
             <td title="${escapeHtml(op.dest_path)}">${escapeHtml(op.dest_path)}</td>
             <td>${formatBytes(op.size_bytes)}</td>
             <td>${escapeHtml(op.error_message || '')}</td>
-        `;
-        tbody.appendChild(tr);
+        `);
+        const empty = document.getElementById('reorg-empty');
+        const table = document.getElementById('reorg-operations-table');
+        if (rows.length === 0) {
+            table.classList.add('hidden');
+            empty.classList.remove('hidden');
+        } else {
+            table.classList.remove('hidden');
+            empty.classList.add('hidden');
+            renderTable('#reorg-operations-table', rows);
+        }
+        return data;
+    } catch (err) {
+        showToast('Error al cargar detalle del job: ' + err.message, 'error');
     }
 }
 
@@ -774,14 +1108,13 @@ async function applyReorgPlan() {
     if (!currentReorgJobId) return;
     if (!confirm('⚠️ Se van a mover archivos físicamente. ¿Has hecho una copia de seguridad? ¿Continuar?')) return;
     try {
-        const res = await fetch(`/api/reorganize/jobs/${currentReorgJobId}/apply`, { method: 'POST' });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Apply failed');
-        await loadReorgJobDetail(currentReorgJobId);
-        document.getElementById('reorg-status').textContent = `Job #${currentReorgJobId} estado: ${data.status}`;
+        const data = await apiPost('/api/reorganize/jobs/' + currentReorgJobId + '/apply', {});
+        const detail = await loadReorgJobDetail(currentReorgJobId);
+        goToStep(4);
+        renderReorgResult(data.status || detail?.data?.status || 'unknown');
+        showToast('Plan aplicado', 'success');
     } catch (err) {
-        console.error('Error applying reorg plan:', err);
-        alert('Error al aplicar el plan: ' + err.message);
+        showToast('Error al aplicar plan: ' + err.message, 'error');
     }
 }
 
@@ -789,13 +1122,154 @@ async function rollbackReorgPlan() {
     if (!currentReorgJobId) return;
     if (!confirm('¿Revertir el último job de reorganización?')) return;
     try {
-        const res = await fetch(`/api/reorganize/jobs/${currentReorgJobId}/rollback`, { method: 'POST' });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Rollback failed');
+        const data = await apiPost('/api/reorganize/jobs/' + currentReorgJobId + '/rollback', {});
         await loadReorgJobDetail(currentReorgJobId);
-        document.getElementById('reorg-status').textContent = `Job #${currentReorgJobId} estado: ${data.status}`;
+        renderReorgResult(data.status || 'rolled_back');
+        showToast('Rollback completado', 'success');
     } catch (err) {
-        console.error('Error rolling back reorg plan:', err);
-        alert('Error al revertir el plan: ' + err.message);
+        showToast('Error al revertir plan: ' + err.message, 'error');
     }
 }
+
+function renderReorgResult(status) {
+    const box = document.getElementById('reorg-result');
+    const ok = status === 'completed' || status === 'rolled_back';
+    box.innerHTML = `
+        <div class="empty-icon">${ok ? '✅' : '⚠️'}</div>
+        <p><strong>Estado del job #${currentReorgJobId}:</strong> <span class="badge status-${status}">${escapeHtml(status)}</span></p>
+        <p class="muted">${ok ? 'La operación finalizó correctamente.' : 'Revisa las operaciones con error en el paso anterior.'}</p>
+    `;
+    document.getElementById('btn-reorg-rollback').disabled = !['completed', 'failed'].includes(status);
+}
+
+function resetReorgWizard() {
+    currentReorgJobId = null;
+    selectedReorgStrategy = null;
+    document.getElementById('reorg-target-root').value = '';
+    document.getElementById('reorg-template').value = '{file_type}/{name}.{ext}';
+    document.getElementById('reorg-cross-volume').checked = false;
+    document.getElementById('reorg-filter-type').value = '';
+    document.getElementById('reorg-filter-ext').value = '';
+    document.getElementById('reorg-filter-tag').value = '';
+    document.getElementById('reorg-space-estimate').classList.add('hidden');
+    document.getElementById('reorg-operations-table').classList.add('hidden');
+    document.getElementById('reorg-empty').classList.add('hidden');
+    document.getElementById('btn-reorg-apply').disabled = true;
+    document.getElementById('btn-reorg-rollback').disabled = true;
+    renderStrategyCards();
+    goToStep(1);
+}
+
+// ============================================================
+// 11. EVENTOS E INICIALIZACIÓN
+// ============================================================
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Navegación del sidebar
+    document.querySelectorAll('.nav-item').forEach(btn => {
+        btn.addEventListener('click', () => switchView(btn.dataset.view));
+    });
+
+    // Colapsar sidebar
+    document.getElementById('sidebar-toggle').addEventListener('click', () => {
+        document.getElementById('sidebar').classList.toggle('collapsed');
+    });
+
+    // Ayuda rápida
+    document.getElementById('btn-help').addEventListener('click', () => {
+        showToast('Alexandria indexa archivos locales. Escanea, explora, etiqueta y reorganiza sin conexión.', 'info');
+    });
+
+    // --- Archivos ---
+    document.getElementById('filter-name').addEventListener('input', () => {
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(() => {
+            readFileFilters();
+            applyFileFilters();
+        }, 350);
+    });
+
+    document.querySelectorAll('.chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            fileFilters.file_type = chip.dataset.type || null;
+            filePage.offset = 0;
+            applyFileFilters();
+        });
+    });
+
+    ['filter-ext', 'filter-subs', 'filter-group', 'filter-sort-by', 'filter-sort-order'].forEach(id => {
+        document.getElementById(id).addEventListener('change', () => {
+            readFileFilters();
+            applyFileFilters();
+        });
+    });
+
+    ['filter-min', 'filter-max', 'filter-after', 'filter-before'].forEach(id => {
+        document.getElementById(id).addEventListener('change', () => {
+            readFileFilters();
+            applyFileFilters();
+        });
+    });
+
+    document.getElementById('btn-clear-filters').addEventListener('click', clearFileFilters);
+    document.getElementById('btn-empty-clear').addEventListener('click', clearFileFilters);
+
+    document.getElementById('btn-prev').addEventListener('click', () => {
+        if (filePage.offset >= filePage.size) {
+            filePage.offset -= filePage.size;
+            applyFileFilters();
+        }
+    });
+
+    document.getElementById('btn-next').addEventListener('click', () => {
+        if (filePage.offset + filePage.size < filePage.count) {
+            filePage.offset += filePage.size;
+            applyFileFilters();
+        }
+    });
+
+    document.getElementById('page-size').addEventListener('change', (e) => {
+        filePage.size = Number(e.target.value);
+        filePage.offset = 0;
+        applyFileFilters();
+    });
+
+    // --- Grupos ---
+    document.getElementById('filter-group-kind').addEventListener('change', renderGroups);
+    document.getElementById('btn-close-group').addEventListener('click', () => {
+        document.getElementById('group-files-panel').classList.add('hidden');
+    });
+
+    // --- Modal detalle ---
+    document.getElementById('btn-close-modal').addEventListener('click', closeFileModal);
+    document.getElementById('file-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'file-modal') closeFileModal();
+    });
+    document.querySelectorAll('.modal-tab').forEach(tab => {
+        tab.addEventListener('click', () => switchModalTab(tab.dataset.tab));
+    });
+    document.getElementById('btn-save-note').addEventListener('click', saveNote);
+    document.getElementById('btn-add-tag').addEventListener('click', addTag);
+    document.getElementById('tag-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') addTag();
+    });
+
+    // --- Reorganizar wizard ---
+    document.querySelectorAll('[data-prev]').forEach(btn => {
+        btn.addEventListener('click', () => goToStep(Number(btn.dataset.prev)));
+    });
+    document.getElementById('btn-reorg-plan').addEventListener('click', createReorgPlan);
+    document.getElementById('btn-reorg-apply').addEventListener('click', applyReorgPlan);
+    document.getElementById('btn-reorg-rollback').addEventListener('click', rollbackReorgPlan);
+    document.getElementById('btn-new-plan').addEventListener('click', resetReorgWizard);
+
+    ['reorg-template', 'reorg-target-root', 'reorg-filter-type', 'reorg-filter-ext'].forEach(id => {
+        document.getElementById(id).addEventListener('input', updatePathPreview);
+        document.getElementById(id).addEventListener('change', updatePathPreview);
+    });
+
+    // Carga inicial
+    switchView('dashboard');
+});

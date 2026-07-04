@@ -3,278 +3,497 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Alexandria</title>
+    <title>Alexandria · Indexador local de activos digitales</title>
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-    <header>
-        <h1>Alexandria</h1>
-        <p>Indexador local de activos digitales</p>
-    </header>
+    <!-- Barra lateral de navegación principal -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+            <span class="brand-icon">📚</span>
+            <div class="brand-text">
+                <strong>Alexandria</strong>
+                <small>v0.5.0</small>
+            </div>
+            <button class="sidebar-toggle" id="sidebar-toggle" title="Colapsar menú">☰</button>
+        </div>
+        <nav class="sidebar-nav">
+            <button class="nav-item active" data-view="dashboard" title="Dashboard">
+                <span class="nav-icon">🏠</span>
+                <span class="nav-label">Dashboard</span>
+            </button>
+            <button class="nav-item" data-view="files" title="Archivos">
+                <span class="nav-icon">📁</span>
+                <span class="nav-label">Archivos</span>
+            </button>
+            <button class="nav-item" data-view="groups" title="Grupos">
+                <span class="nav-icon">🎭</span>
+                <span class="nav-label">Grupos</span>
+            </button>
+            <button class="nav-item" data-view="reorganize" title="Reorganizar">
+                <span class="nav-icon">🧹</span>
+                <span class="nav-label">Reorganizar</span>
+            </button>
+        </nav>
+        <footer class="sidebar-footer">
+            <span>💾 100% local</span>
+        </footer>
+    </aside>
 
-    <nav class="tabs">
-        <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
-        <button class="tab-btn" data-tab="files">Archivos</button>
-        <button class="tab-btn" data-tab="groups">Grupos</button>
-        <button class="tab-btn" data-tab="reorganize">Reorganizar</button>
-    </nav>
+    <!-- Contenedor principal de la aplicación -->
+    <div class="app">
+        <!-- Cabecera con título de vista -->
+        <header class="topbar">
+            <h1 id="page-title">Dashboard</h1>
+            <div class="topbar-actions">
+                <button id="btn-help" class="btn-ghost" title="¿Qué es Alexandria?">❓ Ayuda</button>
+            </div>
+        </header>
 
-    <main>
-        <section id="tab-dashboard" class="tab-panel">
-            <h2>Dashboard</h2>
-            <div class="stats-grid" id="dashboard-stats">
-                <div class="stat"><span id="dash-total">-</span><label>Archivos</label></div>
-                <div class="stat"><span id="dash-size">-</span><label>Tamaño total</label></div>
-                <div class="stat"><span id="dash-groups">-</span><label>Grupos</label></div>
-                <div class="stat"><span id="dash-scan">-</span><label>Último escaneo</label></div>
-            </div>
+        <!-- Área de vistas -->
+        <main class="content">
+            <!-- VISTA DASHBOARD -->
+            <section id="view-dashboard" class="view active">
+                <div class="hero">
+                    <h2>👋 Bienvenido a Alexandria</h2>
+                    <p>
+                        Alexandria escanea tus carpetas, extrae metadatos de video, audio, PDF y archivos comprimidos,
+                        y los organiza en un catálogo local que puedes explorar, etiquetar y reorganizar.
+                        Todo el procesamiento se hace en tu máquina: sin nube, sin dependencias de red.
+                    </p>
+                </div>
 
-            <h3>Archivos por tipo</h3>
-            <div class="stats-grid" id="type-breakdown">
-                <div class="stat"><span id="type-video">-</span><label>Video</label></div>
-                <div class="stat"><span id="type-audio">-</span><label>Audio</label></div>
-                <div class="stat"><span id="type-pdf">-</span><label>PDF</label></div>
-                <div class="stat"><span id="type-archive">-</span><label>Archivo</label></div>
-                <div class="stat"><span id="type-unknown">-</span><label>Desconocido</label></div>
-            </div>
+                <div class="cards-grid" id="dashboard-cards">
+                    <!-- Se rellena desde JS -->
+                </div>
 
-            <h3>Últimos escaneos</h3>
-            <div class="table-wrap">
-                <table id="scan-jobs-table">
-                    <thead>
-                        <tr>
-                            <th>Inicio</th>
-                            <th>Fin</th>
-                            <th>Ruta</th>
-                            <th>Encontrados</th>
-                            <th>Indexados</th>
-                            <th>Errores</th>
-                            <th>Estado</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </section>
+                <div class="panel">
+                    <h3>📊 Distribución por tipo de archivo</h3>
+                    <div class="bar-chart" id="type-chart">
+                        <!-- Se rellena desde JS -->
+                    </div>
+                </div>
 
-        <section id="tab-files" class="tab-panel hidden">
-            <h2>Archivos</h2>
-            <div class="filters">
-                <input type="text" id="filter-name" placeholder="Buscar por nombre...">
-                <select id="filter-ext">
-                    <option value="">Cualquier extensión</option>
-                </select>
-                <select id="filter-file-type">
-                    <option value="">Cualquier tipo</option>
-                </select>
-                <select id="filter-subs">
-                    <option value="">Cualquier subtítulos</option>
-                    <option value="true">Con subtítulos</option>
-                    <option value="false">Sin subtítulos</option>
-                </select>
-                <select id="filter-group">
-                    <option value="">Cualquier grupo</option>
-                </select>
-                <input type="number" id="filter-min" placeholder="Tamaño mínimo (bytes)">
-                <input type="number" id="filter-max" placeholder="Tamaño máximo (bytes)">
-                <label class="datetime-label">Después
-                    <input type="datetime-local" id="filter-after">
-                </label>
-                <label class="datetime-label">Antes
-                    <input type="datetime-local" id="filter-before">
-                </label>
-                <select id="filter-sort-by">
-                    <option value="name">Nombre</option>
-                    <option value="size">Tamaño</option>
-                    <option value="duration">Duración</option>
-                    <option value="modified_at">Modificado</option>
-                </select>
-                <select id="filter-sort-order">
-                    <option value="asc">Ascendente</option>
-                    <option value="desc">Descendente</option>
-                </select>
-                <button id="btn-search">Buscar</button>
-            </div>
-            <p id="results-count" class="results-count">Total: 0 archivos</p>
-            <div class="table-wrap">
-                <table id="files-table">
-                    <thead>
-                        <tr>
-                            <th>Nombre</th>
-                            <th>Ext</th>
-                            <th>Tipo</th>
-                            <th>Tamaño</th>
-                            <th>Duración</th>
-                            <th>Resolución</th>
-                            <th>Subtítulos</th>
-                            <th>Grupo</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-            <div class="pagination">
-                <button id="btn-prev">Anterior</button>
-                <span id="page-info">Mostrando 0-0 de 0</span>
-                <button id="btn-next">Siguiente</button>
-            </div>
-        </section>
-
-        <section id="tab-groups" class="tab-panel hidden">
-            <h2>Grupos</h2>
-            <div class="filters">
-                <select id="filter-group-kind">
-                    <option value="">Todos los tipos</option>
-                    <option value="series">Series</option>
-                    <option value="movie">Película</option>
-                    <option value="collection">Colección</option>
-                    <option value="other">Otro</option>
-                </select>
-                <button id="btn-filter-groups">Filtrar</button>
-            </div>
-            <div id="groups-grid" class="cards-grid"></div>
-            <section id="group-files" class="hidden">
-                <h3>Archivos del grupo</h3>
-                <div class="table-wrap">
-                    <table id="group-files-table">
-                        <thead>
-                            <tr>
-                                <th>Nombre</th>
-                                <th>Ext</th>
-                                <th>Tipo</th>
-                                <th>Tamaño</th>
-                                <th>Duración</th>
-                                <th>Resolución</th>
-                                <th>Subtítulos</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
+                <div class="panel">
+                    <h3>🕒 Últimos escaneos</h3>
+                    <div class="table-wrap">
+                        <table id="scan-jobs-table">
+                            <thead>
+                                <tr>
+                                    <th>Estado</th>
+                                    <th>Inicio</th>
+                                    <th>Fin</th>
+                                    <th>Ruta</th>
+                                    <th>Encontrados</th>
+                                    <th>Indexados</th>
+                                    <th>Errores</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
-        </section>
 
-        <section id="tab-reorganize" class="tab-panel hidden">
-            <h2>Reorganizar archivos</h2>
-            <div class="warning-box">
-                <strong>⚠️ Advertencia:</strong> esta operación mueve archivos físicamente. Se recomienda hacer una copia de seguridad externa antes de aplicar un plan.
-            </div>
+            <!-- VISTA ARCHIVOS -->
+            <section id="view-files" class="view">
+                <div class="panel">
+                    <div class="files-toolbar">
+                        <div class="search-box">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" id="filter-name" placeholder="Buscar por nombre..." autocomplete="off">
+                        </div>
+                        <button id="btn-clear-filters" class="btn-secondary">Limpiar filtros</button>
+                    </div>
 
-            <h3>Discos del sistema</h3>
-            <div class="table-wrap">
-                <table id="system-storage-table">
-                    <thead>
-                        <tr>
-                            <th>Nombre</th>
-                            <th>Punto de montaje</th>
-                            <th>Total</th>
-                            <th>Libre</th>
-                            <th>Usado</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
+                    <div class="filter-chips" id="file-type-chips">
+                        <span class="filter-label">Tipo:</span>
+                        <button class="chip" data-type="">Todos</button>
+                        <button class="chip" data-type="video">🎬 Video</button>
+                        <button class="chip" data-type="audio">🎵 Audio</button>
+                        <button class="chip" data-type="pdf">📄 PDF</button>
+                        <button class="chip" data-type="archive">🗜️ Archivo</button>
+                        <button class="chip" data-type="unknown">❓ Desconocido</button>
+                    </div>
 
-            <h3>Estimación de espacio</h3>
-            <div id="reorg-space-estimate" class="hidden">
-                <p>Total seleccionado: <strong id="reorg-total-bytes">-</strong></p>
-                <p>Espacio adicional requerido: <strong id="reorg-extra-bytes">-</strong></p>
-                <p>Disco destino — Total: <strong id="reorg-target-total">-</strong>, Libre: <strong id="reorg-target-free">-</strong>, Usado: <strong id="reorg-target-used">-</strong></p>
-                <p>Consejo: <span id="reorg-advice">-</span></p>
-                <ul id="reorg-warnings"></ul>
-            </div>
-            <div class="filters">
-                <label>Estrategia
-                    <select id="reorg-strategy">
-                        <option value="by-type">Por tipo</option>
-                        <option value="by-group">Por grupo</option>
-                        <option value="by-date">Por fecha</option>
-                        <option value="by-tag">Por etiqueta</option>
-                        <option value="custom">Personalizada</option>
-                    </select>
-                </label>
-                <label>Plantilla
-                    <input type="text" id="reorg-template" value="{file_type}/{name}.{ext}" style="min-width: 300px;">
-                </label>
-                <label>Destino (target_root)
-                    <input type="text" id="reorg-target-root" placeholder="D:/Organizado" style="min-width: 220px;">
-                </label>
-                <label class="inline-check">
-                    <input type="checkbox" id="reorg-cross-volume"> Permitir cross-volume
-                </label>
-            </div>
-            <div class="filters">
-                <label>Tipo
-                    <select id="reorg-filter-type">
-                        <option value="">Cualquiera</option>
-                    </select>
-                </label>
-                <label>Extensión
-                    <select id="reorg-filter-ext">
-                        <option value="">Cualquiera</option>
-                    </select>
-                </label>
-                <label>Etiqueta
-                    <select id="reorg-filter-tag">
-                        <option value="">Cualquiera</option>
-                    </select>
-                </label>
-            </div>
-            <div class="actions">
-                <button id="btn-reorg-plan">Generar plan</button>
-                <button id="btn-reorg-apply" disabled>Aplicar</button>
-                <button id="btn-reorg-rollback" disabled>Rollback</button>
-            </div>
-            <div id="reorg-status" class="results-count"></div>
-            <div id="reorg-preview" class="table-wrap hidden">
-                <table id="reorg-operations-table">
-                    <thead>
-                        <tr>
-                            <th>Estado</th>
-                            <th>Acción</th>
-                            <th>Origen</th>
-                            <th>Destino</th>
-                            <th>Tamaño</th>
-                            <th>Error</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </section>
+                    <div class="filters-grid">
+                        <label class="field">
+                            <span>Extensión</span>
+                            <select id="filter-ext"><option value="">Cualquiera</option></select>
+                        </label>
+                        <label class="field">
+                            <span>Grupo</span>
+                            <select id="filter-group"><option value="">Cualquiera</option></select>
+                        </label>
+                        <label class="field">
+                            <span>Subtítulos</span>
+                            <select id="filter-subs">
+                                <option value="">Cualquiera</option>
+                                <option value="true">Con subtítulos</option>
+                                <option value="false">Sin subtítulos</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Tamaño mín.</span>
+                            <input type="number" id="filter-min" placeholder="bytes">
+                        </label>
+                        <label class="field">
+                            <span>Tamaño máx.</span>
+                            <input type="number" id="filter-max" placeholder="bytes">
+                        </label>
+                        <label class="field">
+                            <span>Desde</span>
+                            <input type="datetime-local" id="filter-after">
+                        </label>
+                        <label class="field">
+                            <span>Hasta</span>
+                            <input type="datetime-local" id="filter-before">
+                        </label>
+                        <label class="field">
+                            <span>Ordenar por</span>
+                            <select id="filter-sort-by">
+                                <option value="name">Nombre</option>
+                                <option value="size">Tamaño</option>
+                                <option value="duration">Duración</option>
+                                <option value="modified_at">Modificado</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Orden</span>
+                            <select id="filter-sort-order">
+                                <option value="asc">Ascendente</option>
+                                <option value="desc">Descendente</option>
+                            </select>
+                        </label>
+                    </div>
 
-        <section id="detail" class="hidden">
-            <h2>Detalle del archivo</h2>
-            <div id="detail-content" class="detail-grid">
-                <div class="detail-col" id="detail-main"></div>
-                <div class="detail-col" id="detail-extra"></div>
-            </div>
+                    <div class="results-bar">
+                        <span id="results-count">Total: 0 archivo(s)</span>
+                        <span id="page-info">Mostrando 0-0 de 0</span>
+                    </div>
 
-            <div class="tags-box">
-                <h3>Etiquetas</h3>
-                <div id="detail-tags" class="tags-list"></div>
-                <div class="tag-input-row">
-                    <input type="text" id="tag-input" placeholder="Nueva etiqueta...">
-                    <button id="btn-add-tag">Añadir</button>
+                    <div class="table-wrap">
+                        <table id="files-table">
+                            <thead>
+                                <tr>
+                                    <th>Nombre</th>
+                                    <th>Tipo</th>
+                                    <th>Ext</th>
+                                    <th>Tamaño</th>
+                                    <th>Duración</th>
+                                    <th>Resolución</th>
+                                    <th>Subtítulos</th>
+                                    <th>Grupo</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+
+                    <div class="empty-state hidden" id="files-empty">
+                        <div class="empty-icon">🔭</div>
+                        <p>No se encontraron archivos con esos criterios.</p>
+                        <button class="btn-secondary" id="btn-empty-clear">Limpiar filtros</button>
+                    </div>
+
+                    <div class="pagination">
+                        <button id="btn-prev" class="btn-secondary" disabled>Anterior</button>
+                        <div class="page-size">
+                            <span>Mostrar</span>
+                            <select id="page-size">
+                                <option value="10">10</option>
+                                <option value="25" selected>25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                            <span>por página</span>
+                        </div>
+                        <button id="btn-next" class="btn-secondary" disabled>Siguiente</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VISTA GRUPOS -->
+            <section id="view-groups" class="view">
+                <div class="panel">
+                    <div class="groups-toolbar">
+                        <label class="field inline">
+                            <span>Filtrar por tipo</span>
+                            <select id="filter-group-kind">
+                                <option value="">Todos los tipos</option>
+                                <option value="series">📺 Series</option>
+                                <option value="movie">🎬 Película</option>
+                                <option value="collection">📁 Colección</option>
+                                <option value="other">Otro</option>
+                            </select>
+                        </label>
+                        <span id="groups-count" class="results-count">0 grupos</span>
+                    </div>
+                    <div id="groups-grid" class="cards-grid groups"></div>
+                    <div class="empty-state hidden" id="groups-empty">
+                        <div class="empty-icon">🎭</div>
+                        <p>No hay grupos que mostrar.</p>
+                    </div>
+                </div>
+
+                <div class="panel hidden" id="group-files-panel">
+                    <div class="section-header">
+                        <h3 id="group-files-title">Archivos del grupo</h3>
+                        <button id="btn-close-group" class="btn-ghost">Cerrar</button>
+                    </div>
+                    <div class="table-wrap">
+                        <table id="group-files-table">
+                            <thead>
+                                <tr>
+                                    <th>Nombre</th>
+                                    <th>Tipo</th>
+                                    <th>Ext</th>
+                                    <th>Tamaño</th>
+                                    <th>Duración</th>
+                                    <th>Resolución</th>
+                                    <th>Subtítulos</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VISTA REORGANIZAR -->
+            <section id="view-reorganize" class="view">
+                <div class="alert alert-danger">
+                    <span class="alert-icon">⚠️</span>
+                    <div>
+                        <strong>Esta función mueve archivos reales.</strong>
+                        <p class="alert-text">Haz una copia de seguridad externa antes de aplicar cualquier plan. Una vez movidos, la operación puede revertirse solo si completó el plan y no has modificado los archivos de destino.</p>
+                    </div>
+                </div>
+
+                <!-- Indicador de pasos -->
+                <div class="wizard-steps">
+                    <div class="wizard-step active" data-step="1">
+                        <span class="step-number">1</span>
+                        <span class="step-label">Estrategia</span>
+                    </div>
+                    <div class="wizard-connector"></div>
+                    <div class="wizard-step" data-step="2">
+                        <span class="step-number">2</span>
+                        <span class="step-label">Destino</span>
+                    </div>
+                    <div class="wizard-connector"></div>
+                    <div class="wizard-step" data-step="3">
+                        <span class="step-number">3</span>
+                        <span class="step-label">Revisar</span>
+                    </div>
+                    <div class="wizard-connector"></div>
+                    <div class="wizard-step" data-step="4">
+                        <span class="step-number">4</span>
+                        <span class="step-label">Resultado</span>
+                    </div>
+                </div>
+
+                <!-- Paso 1: Estrategia -->
+                <div class="wizard-panel active" data-step="1">
+                    <div class="panel">
+                        <h3>🎯 Paso 1: Selecciona una estrategia</h3>
+                        <p class="muted">Cada estrategia decide cómo se construirán las carpetas y nombres de destino.</p>
+                        <div class="strategy-grid" id="strategy-grid"></div>
+
+                        <h4>💽 Discos del sistema</h4>
+                        <div class="table-wrap">
+                            <table id="system-storage-table">
+                                <thead>
+                                    <tr>
+                                        <th>Nombre</th>
+                                        <th>Punto de montaje</th>
+                                        <th>Total</th>
+                                        <th>Libre</th>
+                                        <th>Usado</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Paso 2: Configuración -->
+                <div class="wizard-panel" data-step="2">
+                    <div class="panel">
+                        <h3>⚙️ Paso 2: Configura el destino</h3>
+                        <div class="filters-grid two-col">
+                            <label class="field">
+                                <span>Carpeta destino (target_root)</span>
+                                <input type="text" id="reorg-target-root" placeholder="D:/Organizado">
+                            </label>
+                            <label class="field">
+                                <span>Plantilla de ruta</span>
+                                <input type="text" id="reorg-template" value="{file_type}/{name}.{ext}">
+                            </label>
+                        </div>
+
+                        <div class="token-help">
+                            <strong>Tokens disponibles:</strong>
+                            <code>{file_type}</code><code>{extension}</code><code>{name}</code><code>{ext}</code>
+                            <code>{group_name}</code><code>{group_kind}</code><code>{year}</code><code>{month}</code><code>{day}</code><code>{tag}</code>
+                        </div>
+
+                        <div class="filters-grid">
+                            <label class="field">
+                                <span>Tipo</span>
+                                <select id="reorg-filter-type"><option value="">Cualquiera</option></select>
+                            </label>
+                            <label class="field">
+                                <span>Extensión</span>
+                                <select id="reorg-filter-ext"><option value="">Cualquiera</option></select>
+                            </label>
+                            <label class="field">
+                                <span>Etiqueta</span>
+                                <select id="reorg-filter-tag"><option value="">Cualquiera</option></select>
+                            </label>
+                            <label class="field inline-check">
+                                <input type="checkbox" id="reorg-cross-volume">
+                                <span>Permitir cross-volume (copia + borrado entre discos)</span>
+                            </label>
+                        </div>
+
+                        <div class="preview-box">
+                            <strong>👁️ Vista previa de ruta</strong>
+                            <div id="reorg-path-preview" class="preview-path">Selecciona una estrategia y rellena los campos para ver un ejemplo.</div>
+                        </div>
+
+                        <div class="wizard-actions">
+                            <button class="btn-secondary" data-prev="1">← Anterior</button>
+                            <button class="btn-primary" id="btn-reorg-plan">Generar plan →</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Paso 3: Revisar plan -->
+                <div class="wizard-panel" data-step="3">
+                    <div class="panel">
+                        <h3>🔍 Paso 3: Revisa el plan</h3>
+                        <div id="reorg-space-estimate" class="hidden">
+                            <div class="estimate-cards">
+                                <div class="estimate-card">
+                                    <span class="estimate-label">Total seleccionado</span>
+                                    <strong id="reorg-total-bytes">-</strong>
+                                </div>
+                                <div class="estimate-card">
+                                    <span class="estimate-label">Espacio adicional requerido</span>
+                                    <strong id="reorg-extra-bytes">-</strong>
+                                </div>
+                                <div class="estimate-card">
+                                    <span class="estimate-label">Destino libre / total</span>
+                                    <strong id="reorg-target-free">-</strong> / <span id="reorg-target-total">-</span>
+                                </div>
+                            </div>
+                            <div class="space-bar-wrap">
+                                <div class="space-bar" id="target-space-bar"></div>
+                                <div class="space-bar-legend">
+                                    <span><span class="dot used"></span> Usado</span>
+                                    <span><span class="dot free"></span> Libre</span>
+                                    <span><span class="dot required"></span> Requerido</span>
+                                </div>
+                            </div>
+                            <div class="advice-box" id="reorg-advice-box"></div>
+                            <ul class="warning-list" id="reorg-warnings"></ul>
+                        </div>
+
+                        <div class="table-wrap">
+                            <table id="reorg-operations-table">
+                                <thead>
+                                    <tr>
+                                        <th>Estado</th>
+                                        <th>Acción</th>
+                                        <th>Origen</th>
+                                        <th>Destino</th>
+                                        <th>Tamaño</th>
+                                        <th>Error</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+
+                        <div class="empty-state hidden" id="reorg-empty">
+                            <div class="empty-icon">📋</div>
+                            <p>El plan no generó operaciones. Prueba a cambiar los filtros o la estrategia.</p>
+                        </div>
+
+                        <div class="wizard-actions">
+                            <button class="btn-secondary" data-prev="2">← Anterior</button>
+                            <button class="btn-danger" id="btn-reorg-apply" disabled>⚡ Aplicar plan</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Paso 4: Resultado -->
+                <div class="wizard-panel" data-step="4">
+                    <div class="panel">
+                        <h3>✅ Paso 4: Resultado</h3>
+                        <div id="reorg-result" class="result-box">
+                            <p class="muted">Aplica un plan para ver el resultado aquí.</p>
+                        </div>
+                        <div class="wizard-actions">
+                            <button class="btn-secondary" id="btn-reorg-rollback" disabled>↩️ Rollback</button>
+                            <button class="btn-primary" id="btn-new-plan">Nuevo plan</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal de detalle de archivo -->
+    <div class="modal-overlay hidden" id="file-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title-wrap">
+                    <h2 id="modal-file-name">Detalle del archivo</h2>
+                    <div id="modal-file-badges"></div>
+                </div>
+                <button class="modal-close" id="btn-close-modal" title="Cerrar">✕</button>
+            </div>
+            <div class="modal-tabs">
+                <button class="modal-tab active" data-tab="general">General</button>
+                <button class="modal-tab" data-tab="extra">Extra</button>
+                <button class="modal-tab" data-tab="notes">Notas</button>
+                <button class="modal-tab" data-tab="tags">Tags</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-panel active" id="tab-general">
+                    <div class="detail-grid" id="detail-general"></div>
+                </div>
+                <div class="modal-panel" id="tab-extra">
+                    <div id="detail-extra"></div>
+                </div>
+                <div class="modal-panel" id="tab-notes">
+                    <div class="notes-editor">
+                        <label class="field">
+                            <span>Nota principal</span>
+                            <textarea id="note-input" rows="4" placeholder="Añade una nota..."></textarea>
+                        </label>
+                        <button id="btn-save-note" class="btn-primary">💾 Guardar nota</button>
+                    </div>
+                    <h4>🕒 Historial de notas</h4>
+                    <div id="notes-history"></div>
+                </div>
+                <div class="modal-panel" id="tab-tags">
+                    <div id="detail-tags" class="tags-list"></div>
+                    <div class="tag-input-row">
+                        <input type="text" id="tag-input" placeholder="Nueva etiqueta...">
+                        <button id="btn-add-tag" class="btn-primary">➕ Añadir</button>
+                    </div>
                 </div>
             </div>
+        </div>
+    </div>
 
-            <div class="notes-box">
-                <h3>Nota actual</h3>
-                <div id="detail-notes"></div>
-                <textarea id="note-input" rows="4" placeholder="Añade una nota..."></textarea>
-                <button id="btn-save-note">Guardar nota</button>
-
-                <h3>Historial de notas</h3>
-                <div id="notes-history"></div>
-            </div>
-        </section>
-    </main>
-
-    <footer>
-        <p>Alexandria MVP · Procesamiento 100% local</p>
-    </footer>
+    <!-- Contenedor de toasts/notificaciones -->
+    <div class="toast-container" id="toast-container"></div>
 
     <script src="/app.js"></script>
 </body>

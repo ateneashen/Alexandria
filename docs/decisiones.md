@@ -96,6 +96,14 @@
 - **Decision:** B.
 - **Justificación:** Por defecto se usan renombrados atómicos (mismo volumen), más seguros e instantáneos. El usuario debe optar conscientemente por operaciones entre discos.
 
+## [2026-07-04] Rediseño completo de la interfaz web
+- **Contexto:** El frontend vanilla existente era funcional pero muy básico; el usuario pidió una IU que sea amigable, didáctica y vistosa, y que sirva de fundamento para futuras iteraciones.
+- **Opciones:**
+  - A: Migrar a un framework SPA (React/Vue/Svelte) con build tool.
+  - B: Mantener vanilla JS/CSS/HTML autocontenido, mejorando radicalmente UX/UI con emojis, SVG inline y animaciones CSS.
+- **Decision:** B.
+- **Justificación:** Preserva la portabilidad y el empaquetado en un único binario sin dependencias de red ni build tools. Emojis y CSS inline cubren iconos y gráficos sin CDNs. La estructura del código se reorganizó para ser legible y didáctica.
+
 ## [2026-07-04] Estimación de espacio en reorganización
 - **Contexto:** La reorganización física puede requerir espacio adicional cuando los archivos se copian entre volúmenes; queremos advertir al usuario antes de ejecutar.
 - **Opciones:**

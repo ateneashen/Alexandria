@@ -12,7 +12,7 @@ Indexador local de activos digitales escrito en Rust. Escanea directorios, extra
 - **Notas y etiquetas**: añade notas históricas y tags a cualquier archivo; gestión desde CLI y web.
 - **Reorganización física de archivos (beta)**: mueve/renombra archivos según plantillas basadas en metadatos, grupos, fecha o tags; con dry-run, backup de BD, verificación de checksums, rollback y **estimación de espacio en disco**.
 - **Base de datos SQLite embebida**: sin instalación externa.
-- **Interfaz web vanilla**: embebida en el binario, lista para usar.
+- **Interfaz web vanilla renovada**: navegación por sidebar, dashboard con gráficos, listado de archivos con filtros avanzados, modal de detalle con pestañas, grupos visuales y wizard de reorganización; todo embebido en el binario.
 - **Single binary**: copia y ejecuta desde cualquier carpeta.
 - **Fallback robusto**: funciona solo con metadatos del sistema de archivos si `ffprobe` no está instalado.
 
@@ -66,7 +66,7 @@ Opciones:
 alexandria serve
 ```
 
-Abre http://127.0.0.1:3000 en tu navegador.
+Abre http://127.0.0.1:3000 en tu navegador. Verás una interfaz con sidebar, dashboard, listado de archivos, grupos y el wizard de reorganización.
 
 ### Ver información
 

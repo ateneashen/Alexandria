@@ -1,9 +1,9 @@
 # Progreso de Alexandria
 
 ## Estado actual
-**Versión:** 0.4.1 (Reorganización con estimación de espacio)  
+**Versión:** 0.5.0 (Rediseño completo de la interfaz web)  
 **Fecha:** 2026-07-04  
-**Estado:** Estimación de espacio integrada en planificación, CLI, API y frontend; beta copiada a `Z:\AlexandriaProjectBeta`
+**Estado:** IU user friendly, didáctica y vistosa implementada; beta copiada a `Z:\AlexandriaProjectBeta`
 
 ## Completado
 - [x] Estructura base del proyecto Cargo.
@@ -38,25 +38,22 @@
 - [x] **Fase de Reorganización Física (v0.4.0)**:
   - [x] Tablas `reorg_jobs` y `reorg_operations`.
   - [x] Motor de plantillas con tokens (`{file_type}`, `{group_name}`, `{year}`, `{tag}`, etc.).
-  - [x] Planificador con detección de colisiones y validación de destinos peligrosos.
-  - [x] Ejecutor con movimientos atómicos (mismo volumen) y copy+verify (cross-volume opt-in).
-  - [x] Backup automático de la BD antes de aplicar.
-  - [x] Verificación de integridad con Blake3 para copias.
-  - [x] Rollback de operaciones completadas.
-  - [x] CLI `reorg plan/list/status/apply/rollback` con confirmación interactiva.
+  - [x] Planificador con detección de colisiones y destinos peligrosos.
+  - [x] Ejecutor con movimientos atómicos y copy+verify entre volúmenes.
+  - [x] CLI `reorg plan/list/status/apply/rollback`.
   - [x] API REST `/api/reorganize/*`.
   - [x] Pestaña "Reorganizar" en el frontend.
-  - [x] Tests de reorganización (plan, apply, rollback, colisión).
-- [x] **Mejora v0.4.1 — Estimación de espacio en reorganización**:
-  - [x] Dependencias `fs2` y `sysinfo` para consultar discos y espacio libre.
-  - [x] Migración SQL `5_add_storage_estimate.sql` con campos de espacio en `reorg_jobs`.
-  - [x] Módulo `src/system/storage.rs`: listado de discos, mapeo path → disco y espacio libre.
-  - [x] Módulo `src/reorganizer/space.rs`: cálculo de espacio extra requerido, consejos y advertencias.
-  - [x] Planner persiste la estimación en el job y `apply` re-verifica espacio antes de ejecutar.
-  - [x] CLI `reorg plan` muestra estimación; `reorg apply` aborta si falta espacio.
-  - [x] Endpoint `/api/system/storage` y respuesta con `estimate` en `/api/reorganize/plan` y `/api/reorganize/jobs/:id`.
-  - [x] Frontend: tabla de discos, panel de estimación y desactivación del botón Aplicar si falta espacio.
-  - [x] Tests unitarios para `estimate_space` y tests de integración para los nuevos endpoints.
+  - [x] Estimación de espacio en disco, consejos y advertencias (v0.4.1).
+- [x] **Rediseño de interfaz web (v0.5.0)**:
+  - [x] Sidebar fija con 4 vistas: Dashboard, Archivos, Grupos, Reorganizar.
+  - [x] Dashboard vistoso con cards, gráfico de barras CSS y tabla de escaneos.
+  - [x] Lista de archivos con búsqueda con debounce, filtros visuales, paginación clara y empty state.
+  - [x] Modal de detalle con pestañas: General, Extra, Notas y Tags.
+  - [x] Vista de grupos con grid de cards y filtro por tipo.
+  - [x] Wizard paso a paso para reorganizar con preview de ruta y barras de espacio.
+  - [x] Sistema de toasts para notificaciones.
+  - [x] Paleta oscura moderna, responsive y animaciones suaves.
+  - [x] `app.js` reorganizado con comentarios didácticos.
 - [x] Beta funcional copiada a `Z:\AlexandriaProjectBeta` con `README-BETA.md` actualizado.
 - [x] Tests unitarios e integración pasando.
 - [x] Validación E2E: scan, info, groups, serve, API, frontend y reorg.
@@ -68,7 +65,7 @@
 - [ ] Empaquetado/distribución (instalador o release automático).
 
 ## Métricas
-- Líneas de código fuente: ~5.200 (aproximado).
+- Líneas de código fuente: ~5.800 (aproximado).
 - Tests: 30 (16 unitarios + 14 integración).
 - Build release: ~2m 50s en este entorno.
 - Tamaño binario release: ~9.5 MB.

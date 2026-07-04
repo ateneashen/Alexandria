@@ -8,7 +8,7 @@
 El objetivo final es convertirse en un gestor universal de activos digitales con capacidades de:
 1. **Ingesta masiva:** Escaneo recursivo de discos duros.
 2. **Base de datos indexada:** Almacenamiento eficiente de metadatos y contenido en SQLite.
-3. **Interfaz Web:** Visualización, filtrado avanzado y gestión mediante HTML/JS.
+3. **Interfaz Web:** Visualización, filtrado avanzado y gestión mediante HTML/JS vanilla, con diseño moderno, sidebar, dashboards, wizards y notificaciones.
 4. **Inteligencia de agrupación:** Detección automática de patrones en nombres (series, versiones de películas).
 5. **Reorganización física segura:** Mover/renombrar archivos en disco según metadatos, grupos, fecha o tags; con dry-run, backup de BD, verificación de integridad y rollback.
 6. **Extensibilidad:** Arquitectura diseñada para soportar nuevos tipos de archivos y operaciones sin refactorizar el núcleo.
@@ -125,6 +125,7 @@ AlexandriaProject/
 - [x] Servidor Axum que sirva la API y el frontend estático.
 - [x] Interfaz HTML/JS para visualización, dashboard, grupos y filtrado avanzado.
 - [x] API REST para operaciones (notas, etiquetas, filtrar, ordenar).
+- [x] Rediseño v0.5.0: sidebar, cards, gráficos CSS, wizard didáctico, toasts, responsive.
 
 ### Fase de Reorganización Física (v0.4.0)
 - [x] Diseño y planificación de seguridad (dry-run, backup, checksums, rollback).
